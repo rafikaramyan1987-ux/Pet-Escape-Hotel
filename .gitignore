@@ -10,3 +10,6 @@ playwright-report/
 docs/art/.frames/
 build-zip/
 submission/trailers/.frames-*/
+
+# the CrazyGames upload zip is a deliverable
+!submission/pet-escape-hotel-v1.zip
