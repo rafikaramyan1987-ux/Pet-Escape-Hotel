@@ -1,4 +1,4 @@
-import type { PetKind } from '../core/level';
+import type { PetKind } from '../art/pets';
 
 /** Cosmetics. Hats and collars fit every pet; skins are per pet. */
 export type Slot = 'hat' | 'collar' | 'skin';

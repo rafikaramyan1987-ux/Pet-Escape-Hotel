@@ -9,7 +9,7 @@ const STUB_SDK = `
   const load = () => JSON.parse(sessionStorage.getItem('cg-data') || '{}');
   window.CrazyGames = { SDK: {
     environment: 'crazygames',
-    init: async () => {},
+    init: async () => { cg.calls.push('init'); },
     ad: { requestAd: (type, cb) => { cg.calls.push('ad:' + type); cb.adStarted && cb.adStarted(); setTimeout(() => cb.adFinished && cb.adFinished(), 30); } },
     game: {
       gameplayStart: () => cg.calls.push('gameplayStart'),
@@ -27,7 +27,7 @@ const STUB_SDK = `
   } };
 })();`;
 
-test('CrazyGames build: one file, lands in gameplay, no failing request, SDK events', async ({ page }) => {
+test('CrazyGames build: one file, SDK order, lands in level 1, no failing request', async ({ page }) => {
   await page.route(SDK_URL, (r) => r.fulfill({ contentType: 'text/javascript', body: STUB_SDK }));
   const requests: string[] = [];
   const failed: string[] = [];
@@ -37,15 +37,12 @@ test('CrazyGames build: one file, lands in gameplay, no failing request, SDK eve
   page.on('response', (r) => r.status() >= 400 && failed.push(`${r.status()} ${r.url()}`));
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  // players land directly in gameplay (first room shows its tip card)
-  await expect(page.getByTestId('tip-ok')).toBeVisible({ timeout: 60_000 });
-  await page.getByTestId('tip-ok').click();
-  await expect(page.getByTestId('pet-dog')).toBeVisible();
+  await expect(page.getByTestId('level')).toHaveText('Level 1', { timeout: 60_000 });
   const own = requests.filter((u) => u.startsWith('http://localhost'));
   expect(own.map((u) => new URL(u).pathname)).toEqual(['/']);
   expect(requests.filter((u) => !u.startsWith('http://localhost') && !u.startsWith('data:') && !u.startsWith('blob:'))).toEqual([SDK_URL]);
   const calls = await page.evaluate(() => (window as unknown as { __cg: { calls: string[] } }).__cg.calls);
-  expect(calls.slice(0, 3)).toEqual(['loadingStart', 'loadingStop', 'gameplayStart']);
+  expect(calls.slice(0, 4)).toEqual(['init', 'loadingStart', 'loadingStop', 'gameplayStart']);
   expect(failed).toEqual([]);
   expect(errors).toEqual([]);
 });

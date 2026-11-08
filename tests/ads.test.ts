@@ -146,11 +146,11 @@ describe('midgame policy', () => {
     await vi.advanceTimersByTimeAsync(MIDGAME_GAP);
     await p.maybeMidgame();
     expect(n).toBe(0); // too early in the game
-    p.policy.roomsDone = 3;
+    p.policy.roomsDone = 4;
     await p.maybeMidgame();
     expect(n).toBe(1);
     await vi.advanceTimersByTimeAsync(MIDGAME_GAP / 2);
-    p.policy.roomsDone = 4;
+    p.policy.roomsDone = 5;
     await p.maybeMidgame();
     expect(n).toBe(1); // within 2 minutes of the last one
     await vi.advanceTimersByTimeAsync(MIDGAME_GAP / 2);

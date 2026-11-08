@@ -112,6 +112,12 @@ export class Pipeline {
     }
   }
 
+  /** Swap the camera (each level builds its own). */
+  setCamera(camera: THREE.PerspectiveCamera): void {
+    this.renderPass.camera = camera;
+    if (this.gtao) this.gtao.camera = camera;
+  }
+
   setBloom(strength: number, radius = 0.65, threshold = 1.0): void {
     if (!this.bloom) return;
     this.bloom.strength = strength;

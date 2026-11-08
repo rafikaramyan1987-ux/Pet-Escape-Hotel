@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 declare global {
   interface Window {
-    __game?: { state(): { mode: string; status?: string; room?: string; active?: string }; step(dt: number, n?: number): void; start(id: string, auto?: boolean): void };
+    __game?: { state(): { level: number; mode: string; taps: number; tray: number } };
   }
 }
 
@@ -12,37 +12,28 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('home → play: tip, HUD, switching pets, tap to move, pause', async ({ page }) => {
+test('level 1 by real taps on the screws: tutorial, rescue, next level', async ({ page }) => {
   await page.goto('/?q=low');
-  await expect(page).toHaveTitle('Pet Escape Hotel');
-  await expect(page.getByTestId('play')).toBeVisible({ timeout: 60_000 });
+  await expect(page).toHaveTitle('Screw & Rescue');
+  await expect(page.getByTestId('level')).toHaveText('Level 1', { timeout: 60_000 });
+  await expect(page.getByTestId('tutorial')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
-  await page.getByTestId('play').click();
-  await page.getByTestId('tip-ok').click();
-  await expect(page.getByTestId('pet-dog')).toBeVisible();
-  await expect(page.getByTestId('ability')).toContainText('Dig');
-  // tap the floor in front of the dog: it walks
-  await page.waitForFunction(() => window.__game!.state().mode === 'play', null, { timeout: 30_000 });
-  await page.mouse.click(195, 330);
-  await page.getByTestId('pause').click();
-  await expect(page.getByTestId('resume')).toBeVisible();
-  await page.getByTestId('resume').click();
-  await expect(page.getByTestId('pause')).toBeVisible();
+  // tap where the tutorial hand points, three times (the hand's fingertip sits on the next screw)
+  for (let i = 0; i < 3; i++) {
+    const before = (await page.evaluate(() => window.__game!.state())).taps;
+    await page.waitForTimeout(400);
+    const box = await page.locator('.hand').boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.click(box!.x + 14, box!.y + 4);
+    await page.waitForFunction((n) => window.__game!.state().taps > n, before, { timeout: 10_000 });
+  }
+  await expect(page.getByTestId('next')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('next').click();
+  await expect(page.getByTestId('level')).toHaveText('Level 2');
 });
 
-test('the playtest bot escapes room 1-1 in the real game', async ({ page }) => {
-  await page.goto('/?q=low&room=1-1&auto=1');
-  await page.waitForFunction(() => window.__game?.state().mode === 'won', null, { timeout: 120_000 });
-  await expect(page.getByTestId('next')).toBeVisible();
-});
-
-test('shop try-on and French', async ({ page }) => {
-  await page.goto('/?q=low');
-  await page.getByTestId('shop').click();
-  await expect(page.getByTestId('tryon')).toBeVisible();
-  await page.goto('/?q=low');
-  await page.getByRole('button', { name: /settings/i }).click();
-  await page.getByTestId('lang-fr').click();
-  await page.getByTestId('close').click();
-  await expect(page.getByTestId('play')).toContainText(/Jouer|Continuer/);
+test('the solver bot clears levels 1-5 in the real game', async ({ page }) => {
+  await page.goto('/?q=low&level=1&auto=1');
+  await page.waitForFunction(() => window.__game?.state().level === 5 && window.__game.state().mode === 'won', null, { timeout: 200_000 });
+  expect((await page.evaluate(() => window.__game!.state())).tray).toBe(0);
 });

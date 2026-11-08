@@ -47,11 +47,11 @@ const realClock: Clock = {
 export const AD_START_TIMEOUT = 8000;
 export const MIDGAME_GAP = 120_000;
 
-/** Midgame ads only between rooms, never in the first rooms, at most one every ~2 minutes. */
+/** Midgame ads only between levels, never before level 4 is done, at most one every ~2 minutes. */
 export class AdPolicy {
   private lastAd: number;
   roomsDone = 0;
-  constructor(private clock: Clock = realClock, private minRooms = 3) {
+  constructor(private clock: Clock = realClock, private minRooms = 4) {
     this.lastAd = clock.now();
   }
   canShowMidgame(): boolean {

@@ -1,0 +1,795 @@
+import * as THREE from 'three';
+import { applyCosmetics, characterLook } from '../art/look';
+import { type Actor, at, cyl, fur, group, matte, mesh, metal, paint, puck, rbox, torus } from '../art/kit';
+import { glowSprite, sparkle } from '../art/fx';
+import { makePet } from '../art/pets';
+import { floorTextures, gradientTexture } from '../art/textures';
+import type { Look } from '../game/save';
+import { PLANK_TINTS, SCREW_HEX, headTexture, plankTexture } from './look';
+import { BOX_SIZE, type Color, type LevelDef, PLANK_W, Puzzle, type PuzzleEvent, SCREW_R } from './model';
+
+/**
+ * 3D presentation of a puzzle: the object (crate / cage / kennel) with the pet inside, planks and screws on
+ * its front, the toolboxes and the holding tray floating above it. The model changes instantly; the view
+ * plays the matching animations (spin out, fly, land, lid close, plank fall, rescue) on its own clock.
+ */
+const OPEN_W = 3.6;
+const OPEN_H = 3.0;
+const FLOOR_Y = -OPEN_H / 2 - 0.42;
+const PLANK_D = 0.16;
+const LAYER_Z = 0.15;
+
+type Sound = 'unscrew' | 'land' | 'tray' | 'close' | 'plank' | 'thud' | 'rescue' | 'pop' | 'fail';
+
+interface Tween {
+  t0: number;
+  dur: number;
+  fn: (k: number) => void;
+  done?: () => void;
+}
+
+interface ScrewView {
+  id: number;
+  color: Color;
+  g: THREE.Group;
+  head: THREE.Mesh;
+  cap: THREE.Mesh;
+  dim: boolean;
+  /** Where it rests (world) while on the plank. */
+  home: THREE.Vector3;
+  flying: boolean;
+}
+
+interface BoxView {
+  uid: number;
+  color: Color;
+  index: number;
+  g: THREE.Group;
+  lid: THREE.Group;
+  landed: number;
+  full: boolean;
+  /** Time the box is in place (screws aimed at it wait for that). */
+  readyAt: number;
+  leaving: boolean;
+}
+
+interface Falling {
+  m: THREE.Object3D;
+  v: THREE.Vector3;
+  w: THREE.Vector3;
+  t: number;
+  bounced: number;
+}
+
+const ease = (k: number) => 1 - Math.pow(1 - k, 3);
+const easeInOut = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const backOut = (k: number) => 1 + 2.4 * Math.pow(k - 1, 3) + 1.4 * Math.pow(k - 1, 2);
+
+export class PuzzleView {
+  readonly scene = new THREE.Scene();
+  readonly camera: THREE.PerspectiveCamera;
+  private now = 0;
+  private tweens: Tween[] = [];
+  private screws: ScrewView[] = [];
+  private planks: THREE.Group[] = [];
+  private boxes: BoxView[] = [];
+  private trayG = group();
+  private traySlots: THREE.Vector3[] = [];
+  private queueG = group();
+  private falling: Falling[] = [];
+  private pet: Actor;
+  private petRoot: THREE.Group;
+  private object = group();
+  private confetti: THREE.InstancedMesh | null = null;
+  private confettiState: { p: THREE.Vector3; v: THREE.Vector3; r: THREE.Euler; w: THREE.Vector3 }[] = [];
+  private confettiT = 0;
+  private rescued = -1;
+  private hearts: THREE.Sprite[] = [];
+  private layoutAspect = 0;
+  /** Box anchor (world) per open-box index, and the tray anchor; set by layout(). */
+  private boxAnchor: THREE.Vector3[] = [];
+  private trayAnchor = new THREE.Vector3();
+  private boxScale = 1;
+  private orbit = 0;
+  onSound: (s: Sound) => void = () => undefined;
+
+  constructor(readonly puzzle: Puzzle, look: Look, quality: 'high' | 'low') {
+    this.camera = new THREE.PerspectiveCamera(36, 1, 0.2, 100);
+    this.scene.background = gradientTexture([[0, '#ffe9c7'], [0.5, '#ffd3b5'], [1, '#f7b9a8']]);
+    this.buildRoom(quality);
+    this.buildObject(puzzle.def);
+    // pet inside
+    this.pet = makePet(puzzle.def.pet);
+    applyCosmetics(this.pet.root, look);
+    characterLook(this.pet.root, 0xffffff, 0.35, true);
+    this.petRoot = group(this.pet.root);
+    const s = puzzle.def.pet === 'hamster' ? 1.9 : 1.45;
+    this.pet.root.scale.setScalar(s);
+    this.petRoot.position.set(0, -OPEN_H / 2 + 0.02, -0.75);
+    this.object.add(this.petRoot);
+    this.buildPlanks();
+    this.buildToolArea();
+    this.scene.add(this.object);
+  }
+
+  // ─── building ────────────────────────────────────────────────────────────
+  private buildRoom(quality: 'high' | 'low'): void {
+    this.scene.add(new THREE.HemisphereLight(0xfff4e2, 0xd9a07a, 1.35));
+    const sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
+    sun.position.set(-4, 9, 7);
+    sun.castShadow = true;
+    const sz = quality === 'high' ? 2048 : 1024;
+    sun.shadow.mapSize.set(sz, sz);
+    Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: 1, far: 30 });
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.02;
+    sun.shadow.radius = 4;
+    this.scene.add(sun);
+    const rim = new THREE.DirectionalLight(0xffd6f0, 1.0);
+    rim.position.set(5, 3, -6);
+    this.scene.add(rim);
+    // table top
+    const { map, bump } = floorTextures(0xd99a62);
+    map.repeat.set(3, 3);
+    bump.repeat.copy(map.repeat);
+    const table = mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ map, bumpMap: bump, bumpScale: 1, roughness: 0.6 }), false, true);
+    at(table, 0, FLOOR_Y, -0.5, -Math.PI / 2, 0, 0);
+    this.scene.add(table);
+    // a soft rug under the object
+    const rug = mesh(puck(2.9, 0.04, 0.02, 64), fur(0xffe2a8, 0.9), false, true);
+    rug.scale.z = 0.6;
+    rug.position.set(0, FLOOR_Y + 0.02, 0.2);
+    this.scene.add(rug);
+  }
+
+  private buildObject(def: LevelDef): void {
+    const o = this.object;
+    const W = OPEN_W + 0.5;
+    const H = OPEN_H + 0.5;
+    const D = 1.7;
+    const kind = def.object;
+    const frameCol = kind === 'cage' ? 0x4f9fd8 : kind === 'kennel' ? 0xf0b13e : 0xc9874f;
+    const frameMat = kind === 'cage' ? paint(frameCol, 0.35, 0.6) : paint(frameCol, 0.6, 0.25);
+    const innerMat = matte(kind === 'cage' ? 0xe8f2fb : 0x8a5a3a, 0.9);
+    // back + sides + floor + top (an open-front box)
+    const back = mesh(rbox(W, H, 0.14, 0.05), innerMat);
+    back.position.set(0, 0, -D + 0.07);
+    const floor = mesh(rbox(W, 0.2, D, 0.06), frameMat);
+    floor.position.set(0, -H / 2 + 0.1, -D / 2);
+    const roof = mesh(rbox(W, 0.2, D, 0.06), frameMat);
+    roof.position.set(0, H / 2 - 0.1, -D / 2);
+    o.add(back, floor, roof);
+    for (const s of [-1, 1]) {
+      const side = mesh(rbox(0.2, H, D, 0.06), frameMat);
+      side.position.set((s * (W - 0.2)) / 2, 0, -D / 2);
+      o.add(side);
+    }
+    // front frame
+    const beam = (w: number, h: number, x: number, y: number) => {
+      const b = mesh(rbox(w, h, 0.26, 0.08), frameMat);
+      b.position.set(x, y, 0.0);
+      o.add(b);
+    };
+    beam(W + 0.1, 0.32, 0, H / 2);
+    beam(W + 0.1, 0.32, 0, -H / 2);
+    beam(0.32, H, -W / 2, 0);
+    beam(0.32, H, W / 2, 0);
+    if (kind === 'crate') {
+      // slats on the sides, stencilled paw on the top beam
+      for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const slat = mesh(rbox(0.06, H * 0.9, 0.3, 0.02), paint(0xb3743f, 0.6, 0.2));
+        slat.position.set((s * (W + 0.02)) / 2, 0, -0.35 - i * 0.5);
+        o.add(slat);
+      }
+    } else if (kind === 'cage') {
+      for (let i = 0; i < 9; i++) {
+        const bar = mesh(cyl(0.035, 0.035, H - 0.3, 10), metal(0xd8dde8, 0.3));
+        bar.position.set(-W / 2 + 0.25 + (i * (W - 0.5)) / 8, 0, -D + 0.2);
+        o.add(bar);
+      }
+      const handle = mesh(torus(0.5, 0.07, Math.PI), paint(frameCol, 0.35, 0.6));
+      handle.position.set(0, H / 2 + 0.1, -D / 2);
+      o.add(handle);
+    } else if (kind === 'kennel') {
+      for (const s of [-1, 1]) {
+        const r = mesh(rbox(W * 0.62, 0.18, D + 0.4, 0.06), paint(0xe2574c, 0.5, 0.35));
+        r.position.set(s * W * 0.27, H / 2 + 0.45, -D / 2);
+        r.rotation.z = -s * 0.55;
+        o.add(r);
+      }
+    }
+    // name plate
+    const plate = mesh(rbox(1.3, 0.3, 0.06, 0.06), paint(0xfff4dc, 0.5, 0.4));
+    plate.position.set(0, -H / 2 - 0.02, 0.15);
+    o.add(plate);
+  }
+
+  private plankZ(layer: number): number {
+    return 0.2 + layer * LAYER_Z;
+  }
+
+  private buildPlanks(): void {
+    const tex = plankTexture();
+    for (const p of this.puzzle.planks) {
+      const sp = p.spec;
+      const g = group();
+      const tint = PLANK_TINTS[(sp.tint ?? p.id) % PLANK_TINTS.length];
+      const m = mesh(rbox(sp.len, PLANK_W, PLANK_D, 0.07), new THREE.MeshStandardMaterial({ map: tex, color: tint, roughness: 0.55 }));
+      g.add(m);
+      // little nail heads at the ends so planks read as "fixed"
+      g.position.set(sp.x, sp.y, this.plankZ(sp.layer));
+      g.rotation.z = (sp.angle * Math.PI) / 180;
+      g.userData.holes = [];
+      this.object.add(g);
+      this.planks.push(g);
+    }
+    for (const s of this.puzzle.screws) {
+      const g = group();
+      const color = s.color;
+      const col = SCREW_HEX[color];
+      const cap = mesh(puck(SCREW_R, 0.1, 0.04, 40), new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.42, clearcoat: 0.45, clearcoatRoughness: 0.3 }));
+      cap.rotation.x = Math.PI / 2;
+      cap.position.z = 0.05;
+      const head = mesh(new THREE.CircleGeometry(SCREW_R * 0.93, 40), new THREE.MeshStandardMaterial({ map: headTexture(color), roughness: 0.6 }), false, false);
+      head.position.z = 0.101;
+      const washer = mesh(torus(SCREW_R * 0.95, 0.03), metal(0xe6e9f0, 0.25), false, false);
+      washer.position.z = 0.01;
+      const shaft = mesh(cyl(0.06, 0.035, 0.42, 14), metal(0xc9ced8, 0.3), false, false);
+      shaft.rotation.x = Math.PI / 2;
+      shaft.position.z = -0.2;
+      for (let i = 0; i < 4; i++) {
+        const th = mesh(torus(0.065 - i * 0.006, 0.012), metal(0xb7bcc8, 0.3), false, false);
+        th.position.z = -0.06 - i * 0.09;
+        g.add(th);
+      }
+      g.add(shaft, washer, cap, head);
+      const home = new THREE.Vector3(s.x, s.y, this.plankZ(s.layer) + PLANK_D / 2);
+      g.position.copy(home);
+      g.rotation.z = ((s.id * 37) % 90) * (Math.PI / 180);
+      this.object.add(g);
+      this.screws.push({ id: s.id, color, g, head, cap, dim: false, home, flying: false });
+    }
+    this.refreshDim(true);
+  }
+
+  private buildToolArea(): void {
+    this.scene.add(this.trayG, this.queueG);
+    const n = this.puzzle.def.tray;
+    const W = n * 0.72 + 0.3;
+    const base = mesh(rbox(W, 0.22, 0.75, 0.1), paint(0x8f9bd6, 0.45, 0.4));
+    const lip = mesh(rbox(W - 0.1, 0.06, 0.62, 0.05), paint(0x6f7cc0, 0.5, 0.3), false, false);
+    lip.position.y = 0.11;
+    this.trayG.add(base, lip);
+    for (let i = 0; i < n; i++) {
+      const x = -((n - 1) * 0.72) / 2 + i * 0.72;
+      const hole = mesh(new THREE.CircleGeometry(0.22, 28), matte(0x3a3f6a, 1), false, false);
+      at(hole, x, 0.145, 0, -Math.PI / 2, 0, 0);
+      this.trayG.add(hole);
+      this.traySlots.push(new THREE.Vector3(x, 0.15, 0));
+    }
+    this.puzzle.boxes.forEach((b, i) => {
+      if (b) this.addBox(b.uid, b.color, i, 0, false);
+    });
+    this.refreshQueue();
+  }
+
+  private makeBox(color: Color): { g: THREE.Group; lid: THREE.Group } {
+    const g = group();
+    const col = SCREW_HEX[color];
+    const body = mesh(rbox(1.5, 0.62, 0.78, 0.12), paint(col, 0.4, 0.55));
+    const band = mesh(rbox(1.52, 0.1, 0.8, 0.04), paint(new THREE.Color(col).multiplyScalar(0.7).getHex(), 0.4, 0.5));
+    band.position.y = -0.12;
+    const top = mesh(rbox(1.38, 0.05, 0.66, 0.03), matte(0x2c2340, 1), false, false);
+    top.position.y = 0.3;
+    g.add(body, band, top);
+    for (let i = 0; i < BOX_SIZE; i++) {
+      const hole = mesh(new THREE.CircleGeometry(0.17, 24), matte(0x120c1c, 1), false, false);
+      at(hole, -0.42 + i * 0.42, 0.33, 0, -Math.PI / 2, 0, 0);
+      g.add(hole);
+    }
+    // symbol badge on the front (colour-blind friendly)
+    const badge = mesh(new THREE.CircleGeometry(0.2, 32), new THREE.MeshStandardMaterial({ map: headTexture(color), roughness: 0.4 }), false, false);
+    badge.position.set(0, -0.02, 0.395);
+    const ring = mesh(torus(0.2, 0.03), paint(0xffffff, 0.4, 0.4), false, false);
+    ring.position.copy(badge.position);
+    g.add(badge, ring);
+    // lid hinged at the back edge
+    const lid = group();
+    lid.position.set(0, 0.31, -0.39);
+    const lidM = mesh(rbox(1.5, 0.07, 0.78, 0.03), paint(col, 0.4, 0.55));
+    lidM.position.set(0, 0.05, 0.39);
+    const handle = mesh(torus(0.18, 0.04, Math.PI), paint(0x3b3f52, 0.4, 0.4));
+    handle.position.set(0, 0.11, 0.39);
+    handle.rotation.y = Math.PI / 2;
+    handle.rotation.z = 0;
+    lid.add(lidM, handle);
+    lid.rotation.x = -2.5;
+    g.add(lid);
+    return { g, lid };
+  }
+
+  private addBox(uid: number, color: Color, index: number, delay: number, animate: boolean): void {
+    const { g, lid } = this.makeBox(color);
+    const bv: BoxView = { uid, color, index, g, lid, landed: 0, full: false, readyAt: this.now + delay + (animate ? 0.4 : 0), leaving: false };
+    this.boxes.push(bv);
+    this.scene.add(g);
+    this.placeBox(bv, animate ? 1 : 0);
+    if (animate) {
+      g.visible = false;
+      this.tween(delay, 0.4, (k) => {
+        g.visible = true;
+        this.placeBox(bv, 1 - backOut(k));
+      });
+    }
+  }
+
+  /** offset: 0 = in place, 1 = off to the right. */
+  private placeBox(b: BoxView, offset: number): void {
+    const a = this.boxAnchor[b.index];
+    if (!a) return;
+    b.g.position.copy(a).add(new THREE.Vector3(offset * 4.5, 0, 0));
+    b.g.scale.setScalar(this.boxScale * (1 - offset * 0.3));
+    b.g.userData.offset = offset;
+  }
+
+  private refreshQueue(): void {
+    this.queueG.clear();
+    const upcoming = this.puzzle.def.queue.slice(this.puzzle.next, this.puzzle.next + 3);
+    upcoming.forEach((c, i) => {
+      const chip = mesh(rbox(0.36, 0.26, 0.3, 0.08), paint(SCREW_HEX[c], 0.4, 0.5), false, false);
+      chip.position.set((i - (upcoming.length - 1) / 2) * 0.46, 0, 0);
+      const d = mesh(new THREE.CircleGeometry(0.1, 20), new THREE.MeshBasicMaterial({ map: headTexture(c) }), false, false);
+      d.position.set((i - (upcoming.length - 1) / 2) * 0.46, 0, 0.152);
+      this.queueG.add(chip, d);
+    });
+  }
+
+  private refreshDim(force = false): void {
+    for (const s of this.screws) {
+      if (s.flying) continue;
+      const dim = !this.puzzle.isFree(s.id) && !this.puzzle.removed[s.id];
+      if (dim === s.dim && !force) continue;
+      s.dim = dim;
+      (s.head.material as THREE.MeshStandardMaterial).map = headTexture(s.color, dim);
+      (s.head.material as THREE.MeshStandardMaterial).needsUpdate = true;
+      const c = new THREE.Color(SCREW_HEX[s.color]);
+      if (dim) c.lerp(new THREE.Color(0x7d7a8c), 0.55).multiplyScalar(0.7);
+      (s.cap.material as THREE.MeshPhysicalMaterial).color.copy(c);
+    }
+  }
+
+  // ─── layout ──────────────────────────────────────────────────────────────
+  /** World point at screen NDC (x, y) on the plane z = zPlane. */
+  private ndcToWorld(x: number, y: number, zPlane: number): THREE.Vector3 {
+    const v = new THREE.Vector3(x, y, 0.5).unproject(this.camera);
+    const dir = v.sub(this.camera.position).normalize();
+    const t = (zPlane - this.camera.position.z) / dir.z;
+    return this.camera.position.clone().addScaledVector(dir, t);
+  }
+
+  layout(aspect: number): void {
+    const cam = this.camera;
+    cam.aspect = aspect;
+    const portrait = aspect < 1;
+    cam.fov = portrait ? 38 : 32;
+    cam.updateProjectionMatrix();
+    const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    // portrait: the object fills the width; landscape: it fills ~56% of the height
+    const objW = OPEN_W + 1.0;
+    const objH = OPEN_H + 1.3;
+    // portrait: toolboxes and tray stacked above the object; landscape: toolboxes left, tray right
+    let halfH: number;
+    let objNdcY: number;
+    if (portrait) {
+      halfH = Math.max(objW / 2 / 0.94 / aspect, objH / 2 / 0.48);
+      // tall phones: the width limits the object, so lift it towards the tray
+      objNdcY = aspect < 0.62 ? -0.2 : -0.32;
+    } else {
+      halfH = objH / 2 / 0.8;
+      objNdcY = -0.06;
+    }
+    const D = halfH / tanH + 0.4;
+    const tilt = THREE.MathUtils.degToRad(7);
+    const target = new THREE.Vector3(0, -objNdcY * halfH * 0.95, 0);
+    cam.position.set(Math.sin(this.orbit) * D, target.y + Math.tan(tilt) * D, Math.cos(this.orbit) * D);
+    cam.lookAt(target);
+    cam.updateMatrixWorld();
+    const zPlane = 1.0;
+    const n = this.puzzle.def.open;
+    const left = this.ndcToWorld(-1, 0, zPlane);
+    const right = this.ndcToWorld(1, 0, zPlane);
+    const worldW = right.x - left.x;
+    this.boxAnchor = [];
+    const trayN = this.puzzle.def.tray * 0.72 + 0.3;
+    if (portrait) {
+      for (let i = 0; i < n; i++) this.boxAnchor.push(this.ndcToWorld(n === 1 ? 0 : -0.46 + (0.92 * i) / (n - 1), 0.62, zPlane));
+      this.boxScale = Math.min(1, (worldW * 0.34) / 1.5);
+      this.trayAnchor = this.ndcToWorld(0, 0.43, zPlane);
+      this.trayG.scale.setScalar(Math.min(1, (worldW * 0.8) / trayN));
+      this.queueG.position.copy(this.ndcToWorld(0, 0.335, zPlane));
+    } else {
+      for (let i = 0; i < n; i++) this.boxAnchor.push(this.ndcToWorld(-0.66, n === 1 ? 0.15 : 0.42 - (0.62 * i) / (n - 1), zPlane));
+      this.boxScale = Math.min(1.1, (worldW * 0.2) / 1.5);
+      this.trayAnchor = this.ndcToWorld(0.71, 0.2, zPlane);
+      this.trayG.scale.setScalar(Math.min(1, (worldW * 0.23) / trayN));
+      this.queueG.position.copy(this.ndcToWorld(-0.66, -0.48, zPlane));
+    }
+    this.trayG.position.copy(this.trayAnchor);
+    this.trayG.rotation.x = 0.35;
+    this.queueG.scale.setScalar(this.boxScale * 0.8);
+    for (const b of this.boxes) if (!b.leaving) this.placeBox(b, b.g.userData.offset ?? 0);
+    this.layoutAspect = aspect;
+  }
+
+  setOrbit(a: number): void {
+    this.orbit = a;
+    this.layout(this.layoutAspect || 1);
+  }
+
+  // ─── picking ─────────────────────────────────────────────────────────────
+  screenOf(id: number, w: number, h: number): { x: number; y: number; r: number } {
+    const s = this.screws[id];
+    const p = new THREE.Vector3();
+    s.head.getWorldPosition(p);
+    const q = p.clone().add(new THREE.Vector3(SCREW_R, 0, 0)).project(this.camera);
+    p.project(this.camera);
+    const x = ((p.x + 1) / 2) * w;
+    const y = ((1 - p.y) / 2) * h;
+    const r = Math.abs(((q.x + 1) / 2) * w - x);
+    return { x, y, r };
+  }
+
+  /** Free screw under a screen point (generous hit area: at least 26 px radius, i.e. a 52 px target). */
+  pick(px: number, py: number, w: number, h: number): number {
+    let best = -1;
+    let bestD = Infinity;
+    for (const s of this.screws) {
+      if (!this.puzzle.isFree(s.id) || s.flying) continue;
+      const sc = this.screenOf(s.id, w, h);
+      const d = Math.hypot(px - sc.x, py - sc.y);
+      if (d <= Math.max(26, sc.r * 1.4) && d < bestD) {
+        best = s.id;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  // ─── events → animations ─────────────────────────────────────────────────
+  private tween(delay: number, dur: number, fn: (k: number) => void, done?: () => void): void {
+    this.tweens.push({ t0: this.now + delay, dur, fn, done });
+  }
+
+  private boxSlotWorld(b: BoxView, slot: number): THREE.Vector3 {
+    const p = new THREE.Vector3(-0.42 + slot * 0.42, 0.5, 0.06);
+    return b.g.localToWorld(p);
+  }
+
+  private traySlotWorld(slot: number): THREE.Vector3 {
+    return this.trayG.localToWorld(this.traySlots[slot].clone().add(new THREE.Vector3(0, 0.12, 0)));
+  }
+
+  /** Fly a screw (detached from the object) to a target that may move. */
+  private fly(s: ScrewView, delay: number, target: () => THREE.Vector3, upright: number, onLand: () => void): void {
+    s.flying = true;
+    const start = new THREE.Vector3();
+    const startQ = new THREE.Quaternion();
+    // 1) unscrew: spin out of the plank
+    const spinT = delay === 0 ? 0.32 : 0;
+    if (spinT) {
+      const z0 = s.g.position.z;
+      const r0 = s.g.rotation.z;
+      this.tween(0, spinT, (k) => {
+        s.g.position.z = z0 + ease(k) * 0.5;
+        s.g.rotation.z = r0 + k * Math.PI * 5;
+      });
+    }
+    // 2) fly on an arc
+    this.tween(Math.max(spinT, delay), 0.5, (k) => {
+      if (start.lengthSq() === 0) {
+        s.g.getWorldPosition(start);
+        s.g.getWorldQuaternion(startQ);
+        this.scene.attach(s.g);
+        start.copy(s.g.position);
+      }
+      const end = target();
+      const e = easeInOut(k);
+      const mid = start.clone().lerp(end, 0.5).add(new THREE.Vector3(0, 1.2, 0.6));
+      const a = start.clone().lerp(mid, e);
+      const b = mid.clone().lerp(end, e);
+      s.g.position.copy(a.lerp(b, e));
+      const endQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-upright, 0, k * Math.PI * 2));
+      s.g.quaternion.copy(startQ).slerp(endQ, e);
+      s.g.scale.setScalar(1 - 0.12 * e);
+    }, () => {
+      s.g.position.copy(target());
+      onLand();
+    });
+  }
+
+  apply(events: PuzzleEvent[]): void {
+    const unscrewed = events.find((e) => e.type === 'toBox' || e.type === 'toTray');
+    if (unscrewed) this.onSound('unscrew');
+    for (const e of events) {
+      switch (e.type) {
+        case 'toBox': {
+          const s = this.screws[e.screw];
+          const b = this.boxes.find((x) => x.uid === e.uid)!;
+          const wait = Math.max(0, b.readyAt - this.now - 0.5);
+          this.fly(s, wait, () => this.boxSlotWorld(b, e.slot), 0.45, () => {
+            this.onSound('land');
+            b.g.attach(s.g);
+            this.landedInBox(b);
+          });
+          break;
+        }
+        case 'toTray': {
+          const s = this.screws[e.screw];
+          this.fly(s, 0, () => this.traySlotWorld(e.slot), 0.5, () => {
+            this.onSound('tray');
+            this.trayG.attach(s.g);
+          });
+          break;
+        }
+        case 'trayToBox': {
+          const s = this.screws[e.screw];
+          const b = this.boxes.find((x) => x.uid === e.uid)!;
+          const wait = Math.max(0.55, b.readyAt - this.now);
+          this.fly(s, wait, () => this.boxSlotWorld(b, e.slot), 0.45, () => {
+            this.onSound('land');
+            b.g.attach(s.g);
+            this.landedInBox(b);
+          });
+          break;
+        }
+        case 'boxFull': {
+          const b = this.boxes.find((x) => x.uid === e.uid);
+          if (b) b.full = true;
+          break;
+        }
+        case 'boxOpen': {
+          // the new box slides in once the full one at this index has left
+          const prev = this.boxes.filter((x) => x.index === e.box && x.uid !== e.uid);
+          const leaveAt = prev.length ? Math.max(...prev.map((p) => p.readyAt)) + 1.05 : this.now;
+          this.addBox(e.uid, e.color, e.box, Math.max(0, leaveAt - this.now), true);
+          this.refreshQueue();
+          break;
+        }
+        case 'plankFall':
+          this.tween(0.3, 0.01, () => undefined, () => this.dropPlank(e.plank));
+          break;
+        case 'won':
+          this.tween(1.0, 0.01, () => undefined, () => this.rescue());
+          break;
+        case 'lost':
+          this.onSound('fail');
+          this.tween(0, 0.5, (k) => {
+            this.trayG.rotation.z = Math.sin(k * Math.PI * 6) * 0.06 * (1 - k);
+          });
+          break;
+      }
+    }
+    this.refreshDim();
+  }
+
+  private landedInBox(b: BoxView): void {
+    b.landed++;
+    const s0 = this.boxScale;
+    this.tween(0, 0.18, (k) => b.g.scale.set(s0 * (1 + 0.08 * Math.sin(k * Math.PI)), s0 * (1 - 0.08 * Math.sin(k * Math.PI)), s0));
+    if (b.landed >= BOX_SIZE) {
+      b.leaving = true;
+      b.readyAt = this.now;
+      // lid closes, a little hop, slides away
+      this.tween(0.1, 0.22, (k) => (b.lid.rotation.x = -2.5 * (1 - ease(k))), () => this.onSound('close'));
+      this.tween(0.36, 0.2, (k) => (b.g.position.y = this.boxAnchor[b.index].y + Math.sin(k * Math.PI) * 0.25));
+      this.tween(0.6, 0.4, (k) => this.placeBox(b, easeInOut(k)), () => {
+        b.g.removeFromParent();
+        this.boxes = this.boxes.filter((x) => x !== b);
+      });
+      // sparkle
+      const sp = sparkle(0xffffff, 0.6);
+      sp.position.copy(b.g.position).add(new THREE.Vector3(0.5, 0.5, 0.4));
+      this.scene.add(sp);
+      this.tween(0.1, 0.5, (k) => sp.scale.setScalar(0.9 * Math.sin(k * Math.PI)), () => sp.removeFromParent());
+    }
+  }
+
+  private dropPlank(id: number): void {
+    const g = this.planks[id];
+    this.onSound('plank');
+    this.scene.attach(g);
+    const r = Math.sin(id * 12.9898) * 0.5;
+    this.falling.push({ m: g, v: new THREE.Vector3(r * 1.2, 1.6, 2.2), w: new THREE.Vector3(1.5 + r, r * 2, 2.5 * Math.sign(r || 1)), t: 0, bounced: 0 });
+    this.refreshDim(true);
+  }
+
+  private dust(p: THREE.Vector3): void {
+    for (let i = 0; i < 6; i++) {
+      const s = glowSprite(0xfff1dc, 0.5, 0.55);
+      s.position.copy(p).add(new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.1, (Math.random() - 0.5) * 0.6));
+      this.scene.add(s);
+      const v = new THREE.Vector3((Math.random() - 0.5) * 1.5, 0.6 + Math.random() * 0.6, (Math.random() - 0.5) * 0.8);
+      const p0 = s.position.clone();
+      this.tween(0, 0.7, (k) => {
+        s.position.copy(p0).addScaledVector(v, k);
+        s.scale.setScalar(0.4 + k * 0.8);
+        s.material.opacity = 0.55 * (1 - k);
+      }, () => s.removeFromParent());
+    }
+  }
+
+  /** The pet hops out of the object, confetti and hearts. */
+  private rescue(): void {
+    this.rescued = this.now;
+    this.onSound('rescue');
+    const p0 = this.petRoot.position.clone();
+    const p1 = new THREE.Vector3(0, FLOOR_Y + 0.02, 1.4);
+    this.tween(0, 0.7, (k) => {
+      this.petRoot.position.lerpVectors(p0, p1, k);
+      this.petRoot.position.y = p0.y + (p1.y - p0.y) * k + Math.sin(k * Math.PI) * 1.5;
+      this.petRoot.rotation.y = k * Math.PI * 2;
+    }, () => this.onSound('pop'));
+    // confetti
+    const N = 140;
+    const geo = new THREE.PlaneGeometry(0.12, 0.2);
+    const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false });
+    const im = new THREE.InstancedMesh(geo, mat, N);
+    const cols = Object.values(SCREW_HEX);
+    this.confettiState = [];
+    for (let i = 0; i < N; i++) {
+      im.setColorAt(i, new THREE.Color(cols[i % cols.length]));
+      const a = Math.random() * Math.PI * 2;
+      const sp = 3 + Math.random() * 4;
+      this.confettiState.push({
+        p: new THREE.Vector3(0, 0.5, 1.2),
+        v: new THREE.Vector3(Math.cos(a) * sp * 0.6, 5 + Math.random() * 4, Math.sin(a) * sp * 0.4 + 1),
+        r: new THREE.Euler(Math.random() * 6, Math.random() * 6, 0),
+        w: new THREE.Vector3(Math.random() * 10, Math.random() * 10, Math.random() * 10),
+      });
+    }
+    im.userData.noAO = true;
+    this.scene.add(im);
+    this.confetti = im;
+    this.confettiT = 0;
+    for (let i = 0; i < 5; i++) {
+      const h = new THREE.Sprite(new THREE.SpriteMaterial({ map: heartTexture(), transparent: true, depthWrite: false }));
+      h.userData.noAO = true;
+      this.scene.add(h);
+      this.hearts.push(h);
+    }
+  }
+
+  /** Cover art: no tray, and the two other pets cheering beside the object. */
+  private extras: Actor[] = [];
+  coverExtras(): void {
+    this.trayG.visible = false;
+    this.queueG.visible = false;
+    const others = (['dog', 'cat', 'hamster'] as const).filter((k) => k !== this.puzzle.def.pet);
+    others.forEach((k, i) => {
+      const a = makePet(k);
+      characterLook(a.root, 0xffffff, 0.35, true);
+      a.root.scale.setScalar(k === 'hamster' ? 1.75 : 1.3);
+      const sx = i === 0 ? -1 : 1;
+      a.root.position.set(sx * 2.7, FLOOR_Y + 0.04, 1.9);
+      a.root.rotation.y = -sx * 0.45;
+      this.scene.add(a.root);
+      this.extras.push(a);
+    });
+  }
+
+  get rescueTime(): number {
+    return this.rescued < 0 ? -1 : this.now - this.rescued;
+  }
+
+  // ─── frame ───────────────────────────────────────────────────────────────
+  update(dt: number): void {
+    this.now += dt;
+    const t = this.now;
+    for (const tw of this.tweens.slice()) {
+      if (t < tw.t0) continue;
+      const k = Math.min(1, (t - tw.t0) / tw.dur);
+      tw.fn(k);
+      if (k >= 1) {
+        this.tweens.splice(this.tweens.indexOf(tw), 1);
+        tw.done?.();
+      }
+    }
+    // falling planks
+    for (const f of this.falling.slice()) {
+      f.t += dt;
+      f.v.y -= 16 * dt;
+      f.m.position.addScaledVector(f.v, dt);
+      f.m.rotation.x += f.w.x * dt;
+      f.m.rotation.y += f.w.y * dt;
+      f.m.rotation.z += f.w.z * dt;
+      if (f.m.position.y < FLOOR_Y + 0.12 && f.v.y < 0) {
+        f.m.position.y = FLOOR_Y + 0.12;
+        if (f.bounced === 0) {
+          this.dust(f.m.position);
+          this.onSound('thud');
+        }
+        f.bounced++;
+        f.v.y = -f.v.y * 0.35;
+        f.v.x *= 0.6;
+        f.v.z *= 0.6;
+        f.w.multiplyScalar(0.4);
+      }
+      if (f.t > 1.4) {
+        const k = Math.min(1, (f.t - 1.4) / 0.4);
+        f.m.scale.setScalar(1 - k);
+        if (k >= 1) {
+          f.m.removeFromParent();
+          this.falling.splice(this.falling.indexOf(f), 1);
+        }
+      }
+    }
+    // free screws breathe a little (they are the ones you can tap)
+    for (const s of this.screws) {
+      if (s.flying) continue;
+      const free = this.puzzle.isFree(s.id);
+      s.g.scale.setScalar(free ? 1 + 0.035 * Math.sin(t * 4 + s.id) : 1);
+    }
+    // pet
+    this.pet.update(t);
+    this.extras.forEach((a, i) => {
+      a.update(t + i);
+      a.root.position.y = FLOOR_Y + 0.04 + Math.abs(Math.sin(t * 3 + i * 1.7)) * 0.18;
+    });
+    if (this.rescued >= 0) {
+      const rt = t - this.rescued;
+      if (rt > 0.7) this.petRoot.position.y = FLOOR_Y + 0.02 + Math.abs(Math.sin((rt - 0.7) * 6)) * 0.25 * Math.max(0, 1 - (rt - 0.7) / 3);
+      this.hearts.forEach((h, i) => {
+        const p = ((rt * 0.5 + i / 5) % 1);
+        h.position.set(this.petRoot.position.x + Math.sin(i * 2 + rt) * 0.8, this.petRoot.position.y + 1.4 + p * 1.6, this.petRoot.position.z);
+        const s = 0.35 * Math.sin(p * Math.PI);
+        h.scale.set(s, s, 1);
+      });
+    }
+    if (this.confetti) {
+      this.confettiT += dt;
+      const m = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      this.confettiState.forEach((c, i) => {
+        c.v.y -= 9 * dt;
+        c.v.multiplyScalar(1 - dt * 0.8);
+        c.p.addScaledVector(c.v, dt);
+        c.r.x += c.w.x * dt;
+        c.r.y += c.w.y * dt;
+        if (c.p.y < FLOOR_Y + 0.02) {
+          c.p.y = FLOOR_Y + 0.02;
+          c.v.set(0, 0, 0);
+        }
+        q.setFromEuler(c.r);
+        m.compose(c.p, q, new THREE.Vector3(1, 1, 1));
+        this.confetti!.setMatrixAt(i, m);
+      });
+      this.confetti.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /** True while screws are still flying / boxes moving (the controller waits before showing results). */
+  busy(): boolean {
+    return this.tweens.length > 0 || this.falling.length > 0;
+  }
+}
+
+let heartTex: THREE.CanvasTexture | null = null;
+function heartTexture(): THREE.CanvasTexture {
+  if (heartTex) return heartTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ff5f8f';
+  g.strokeStyle = '#3b2346';
+  g.lineWidth = 8;
+  g.beginPath();
+  g.moveTo(64, 110);
+  g.bezierCurveTo(-10, 60, 20, 0, 64, 36);
+  g.bezierCurveTo(108, 0, 138, 60, 64, 110);
+  g.fill();
+  g.stroke();
+  heartTex = new THREE.CanvasTexture(c);
+  heartTex.colorSpace = THREE.SRGBColorSpace;
+  return heartTex;
+}
+

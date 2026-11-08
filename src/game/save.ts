@@ -1,4 +1,4 @@
-import type { PetKind } from '../core/level';
+import type { PetKind } from '../art/pets';
 
 /** Progress, wallet, cosmetics and settings. Stored through the platform (CrazyGames Data Module / localStorage). */
 export interface RoomRecord {
@@ -26,7 +26,7 @@ export interface SaveData {
   seenTips: number[];
 }
 
-export const SAVE_KEY = 'pet-escape-hotel.save.v1';
+export const SAVE_KEY = 'screw-and-rescue.save.v1';
 
 export function freshSave(): SaveData {
   const look: Look = { hat: 'none', collar: 'default', skin: 'default' };

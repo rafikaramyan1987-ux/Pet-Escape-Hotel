@@ -1,0 +1,49 @@
+import type { LevelDef } from './model';
+
+/**
+ * Hand-made opening levels (phase A). The opening is about 3.4 wide × 2.8 tall, centred on (0, 0).
+ * Levels 1–10 must be impossible to fail: at most 2 colours with 2 toolboxes open, so a screw always
+ * has a box to go to (the solver test checks every possible order of taps).
+ */
+export const LEVELS: LevelDef[] = [
+  {
+    id: 1, object: 'crate', pet: 'dog', open: 2, tray: 5, tutorial: true,
+    planks: [{ x: 0, y: 0, len: 3.3, angle: 0, layer: 0, screws: ['red', 'red', 'red'], tint: 0 }],
+    queue: ['red'],
+  },
+  {
+    id: 2, object: 'crate', pet: 'cat', open: 2, tray: 5, tutorial: true,
+    planks: [
+      { x: 0, y: 0.62, len: 3.3, angle: 0, layer: 0, screws: ['blue', 'blue', 'blue'], tint: 1 },
+      { x: 0, y: -0.62, len: 3.3, angle: 0, layer: 0, screws: ['red', 'red', 'red'], tint: 2 },
+    ],
+    queue: ['blue', 'red'],
+  },
+  {
+    id: 3, object: 'crate', pet: 'hamster', open: 2, tray: 5,
+    planks: [
+      { x: 0, y: 0.9, len: 3.3, angle: 0, layer: 0, screws: ['red', 'blue'], tint: 3 },
+      { x: 0, y: 0, len: 3.3, angle: 0, layer: 0, screws: ['blue', 'red'], tint: 0 },
+      { x: 0, y: -0.9, len: 3.3, angle: 0, layer: 0, screws: ['red', 'blue'], tint: 1 },
+    ],
+    queue: ['red', 'blue'],
+  },
+  {
+    id: 4, object: 'cage', pet: 'dog', open: 2, tray: 5,
+    planks: [
+      { x: -0.85, y: 0, len: 2.9, angle: 90, layer: 0, screws: ['red', 'blue', 'red'], tint: 2 },
+      { x: 0.85, y: 0, len: 2.9, angle: 90, layer: 0, screws: ['blue', 'red', 'blue'], tint: 3 },
+      { x: 0, y: 0, len: 3.4, angle: 0, layer: 1, screws: ['blue', 'blue', 'blue'], tint: 0 },
+    ],
+    queue: ['blue', 'red', 'blue'],
+  },
+  {
+    id: 5, object: 'kennel', pet: 'cat', open: 2, tray: 5,
+    planks: [
+      { x: 0, y: 0.2, len: 3.6, angle: 32, layer: 0, screws: ['red', 'blue', 'red'], tint: 1 },
+      { x: 0, y: 0.2, len: 3.6, angle: -32, layer: 1, screws: ['blue', 'red', 'blue'], tint: 2 },
+      { x: 0, y: -1.0, len: 3.3, angle: 0, layer: 0, screws: ['red', 'red', 'red'], tint: 3 },
+    ],
+    queue: ['red', 'blue', 'red'],
+  },
+];
