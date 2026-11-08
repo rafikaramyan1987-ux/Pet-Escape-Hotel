@@ -9,7 +9,7 @@ const mobile = {
 
 export default defineConfig({
   testDir: 'e2e',
-  timeout: 180_000,
+  timeout: 240_000,
   retries: process.env.CI ? 1 : 0,
   projects: [
     { name: 'web', testMatch: 'smoke.spec.ts', use: { ...mobile, baseURL: 'http://localhost:4173' } },

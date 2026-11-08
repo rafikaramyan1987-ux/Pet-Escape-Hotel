@@ -1,65 +1,88 @@
 import './style.css';
-import * as THREE from 'three';
-import { Pipeline } from './render/pipeline';
-import { makeShot, type ShotName } from './showcase/shots';
-import { renderHud } from './ui/hud';
-import { renderPortraits } from './ui/portraits';
+import { ROOMS } from './core/rooms';
+import { Game } from './game/game';
+import { detectLang, setLang } from './game/i18n';
+import { parseSave, SAVE_KEY } from './game/save';
+import { Audio } from './platform/audio';
+import { detectSdk, Platform } from './platform/sdk';
 
 /**
- * Phase 1 (art direction): the page shows the showcase lobby. `?shot=gameplay|lineup|title|turntable`
- * picks a composition; `?t=<seconds>` freezes time; `?hud=0` hides the HUD. `window.__art.renderAt(t)` lets
- * the capture script step frames deterministically.
+ * Boot. `?shot=…` keeps the phase-1 art showcase (renders in docs/art). Otherwise the game runs.
+ * Tooling (web build only): `?room=2-4` jumps to a room, `?auto=1` lets the playtest bot play it,
+ * `?capture=1` gives a script frame-exact control through `window.__game`.
  */
 async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
-  const shotName = (params.get('shot') ?? 'gameplay') as ShotName;
-  const frozen = params.has('t') ? Number(params.get('t')) : null;
-  const hq = params.get('q') !== 'low';
-
   await Promise.all([
     document.fonts.load("400 64px 'Lilita One'"),
     document.fonts.load("600 32px 'Fredoka'"),
     document.fonts.load("700 32px 'Fredoka'"),
   ]).catch(() => undefined);
 
-  const canvas = document.getElementById('view') as HTMLCanvasElement;
-  const ui = document.getElementById('ui')!;
-  const aspect = window.innerWidth / window.innerHeight;
-  const shot = makeShot(shotName, aspect);
-  const pipe = new Pipeline(canvas, shot.scene, shot.camera, { ao: hq, bloom: true, pixelRatio: Math.min(window.devicePixelRatio, 2) });
-  if (shot.bloom) pipe.setBloom(...shot.bloom);
-  if (shot.vignette !== undefined) pipe.setVignette(shot.vignette);
-
-  if (shotName === 'gameplay' && params.get('hud') !== '0') {
-    renderHud(ui, { room: 'The Lobby', roomNo: 1, stars: 2, bones: [1, 3], active: 'dog', stealth: 0.32 }, renderPortraits());
-  }
-  shot.update(frozen ?? 0);
-  shot.overlay?.(ui);
-  document.getElementById('boot')?.remove();
-
-  const renderAt = (t: number) => {
-    shot.update(t);
-    pipe.render();
-  };
-  (window as unknown as { __art: unknown }).__art = { renderAt, ready: true };
-
-  window.addEventListener('resize', () => {
-    shot.camera.aspect = window.innerWidth / window.innerHeight;
-    shot.camera.updateProjectionMatrix();
-    pipe.setSize(window.innerWidth, window.innerHeight);
-    shot.overlay?.(ui);
-  });
-
-  if (frozen !== null) {
-    renderAt(frozen);
+  if (__TARGET__ !== 'crazygames' && params.has('shot')) {
+    const { bootShowcase } = await import('./showcase/boot');
+    await bootShowcase(params);
     return;
   }
-  const clock = new THREE.Clock();
-  const loop = () => {
-    renderAt(clock.getElapsedTime());
-    requestAnimationFrame(loop);
+
+  const platform = new Platform(detectSdk());
+  await platform.init(); // SDK.init() first, then every other SDK call
+  platform.loadingStart();
+  const save = parseSave(platform.getItem(SAVE_KEY));
+  setLang(detectLang(save.settings.lang));
+  const audio = new Audio();
+  audio.setSound(save.settings.sound);
+  audio.setMusic(save.settings.music);
+  audio.setExternalMute(platform.muted);
+  platform.onMuteChange = (m) => audio.setExternalMute(m);
+  const input = document.getElementById('app')!;
+  platform.onAdStart = () => {
+    audio.suspend(true);
+    input.classList.add('blocked');
   };
-  loop();
+  platform.onAdEnd = () => {
+    audio.suspend(false);
+    input.classList.remove('blocked');
+  };
+
+  const mobile = matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 820;
+  const tooling = __TARGET__ !== 'crazygames';
+  const capture = tooling && params.has('capture');
+  const game = new Game(document.getElementById('view') as HTMLCanvasElement, document.getElementById('ui')!, save, platform, audio, {
+    quality: params.get('q') === 'low' || (mobile && params.get('q') !== 'high') ? 'low' : 'high',
+    manual: capture,
+  });
+  document.getElementById('boot')?.remove();
+  platform.loadingStop();
+
+  const roomParam = tooling ? params.get('room') : null;
+  if (roomParam) {
+    const i = ROOMS.findIndex((r) => r.id === roomParam);
+    save.seenTips = [1, 2, 3, 4, 5];
+    game.startRoom(Math.max(0, i));
+    game.autoplay = params.get('auto') === '1';
+  } else if (__TARGET__ === 'crazygames') {
+    // players land directly in gameplay, on their current room
+    game.startRoom(game.currentRoom());
+  } else {
+    game.showMenuScene();
+    game.ui.home();
+  }
+  if (tooling) {
+    (window as unknown as { __game: unknown }).__game = {
+      game,
+      step: (dt: number, n = 1) => {
+        for (let i = 0; i < n; i++) game.advance(dt, i === n - 1);
+      },
+      start: (id: string, auto = true) => {
+        save.seenTips = [1, 2, 3, 4, 5];
+        game.startRoom(ROOMS.findIndex((r) => r.id === id));
+        game.autoplay = auto;
+      },
+      state: () => ({ mode: game.mode, status: game.sim?.status, room: game.level?.id, active: game.sim?.active }),
+    };
+  }
+  game.loop();
 }
 
 void boot();

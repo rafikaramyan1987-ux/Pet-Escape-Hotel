@@ -7,6 +7,8 @@ import { makeBone, makePlant } from '../art/props';
 import { glowSprite } from '../art/fx';
 import { gradientTexture } from '../art/textures';
 import { ICON } from '../ui/icons';
+import { fitCamera, orbit } from '../render/frame';
+import { characterLook } from '../art/look';
 
 /** The art-direction shots, all rendered from the real scene. */
 export type ShotName = 'gameplay' | 'lineup' | 'title' | 'turntable';
@@ -20,46 +22,6 @@ export interface Shot {
   overlay?(ui: HTMLElement): void;
   bloom?: [number, number, number];
   vignette?: number;
-}
-
-function orbit(cam: THREE.PerspectiveCamera, target: THREE.Vector3, yawDeg: number, pitchDeg: number, dist: number): void {
-  const y = THREE.MathUtils.degToRad(yawDeg);
-  const p = THREE.MathUtils.degToRad(pitchDeg);
-  cam.position.set(target.x + Math.sin(y) * Math.cos(p) * dist, target.y + Math.sin(p) * dist, target.z + Math.cos(y) * Math.cos(p) * dist);
-  cam.lookAt(target);
-}
-
-/**
- * Aim the camera from (yaw, pitch) so that `pts` fill the safe rectangle (NDC) as much as possible:
- * a few iterations of re-centering the target and scaling the distance.
- */
-function fitCamera(cam: THREE.PerspectiveCamera, pts: THREE.Vector3[], yawDeg: number, pitchDeg: number, safe: { x0: number; x1: number; y0: number; y1: number }): { target: THREE.Vector3; dist: number } {
-  const target = new THREE.Vector3();
-  for (const p of pts) target.add(p);
-  target.divideScalar(pts.length);
-  let dist = 30;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < 12; i++) {
-    orbit(cam, target, yawDeg, pitchDeg, dist);
-    cam.updateMatrixWorld();
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of pts) {
-      v.copy(p).project(cam);
-      minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
-      minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
-    }
-    const k = Math.max((maxX - minX) / (safe.x1 - safe.x0), (maxY - minY) / (safe.y1 - safe.y0));
-    // shift the target in screen space so the box centre lands on the safe centre
-    const dx = (minX + maxX) / 2 - (safe.x0 + safe.x1) / 2;
-    const dy = (minY + maxY) / 2 - (safe.y0 + safe.y1) / 2;
-    const halfH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * dist;
-    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
-    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
-    target.addScaledVector(right, dx * halfH * cam.aspect).addScaledVector(up, dy * halfH);
-    dist *= 0.5 + 0.5 * k;
-  }
-  orbit(cam, target, yawDeg, pitchDeg, dist);
-  return { target, dist };
 }
 
 /** Corners of the lobby diorama (floor slab + wall tops). */
@@ -143,6 +105,8 @@ function titleShot(aspect: number): Shot {
   at(cushion, 0.05, 0.12, 5.85);
   at(ham.root, 0.05, 0.24, 5.85, 0, 0.42, 0);
   ham.root.scale.setScalar(1.35);
+  for (const a of [dog, cat, ham]) characterLook(a.root, 0xd6e0ff, 0.55, true);
+  characterLook(lobby.porter.root, 0xd6e0ff, 0.45, true);
   scene.add(dog.root, cat.root, ham.root, cushion);
   const bones: Actor[] = [];
   for (const [x, z, ph] of [[2.55, 5.7, 0], [-2.45, 5.6, 1.5]] as const) {
@@ -160,8 +124,16 @@ function titleShot(aspect: number): Shot {
   scene.add(porterFill);
   lobby.porter.root.scale.setScalar(1.25);
   lobby.porter.aim.set(-0.6, 0, 3.2);
-  const target = new THREE.Vector3(0.1, 2.0, 2.4);
-  orbit(camera, target, 22, 21, 15);
+  // covers come in three shapes: frame the heroes for each (the logo goes where the top-left stays clear)
+  if (aspect < 0.9) {
+    camera.fov = 40;
+    camera.updateProjectionMatrix();
+    orbit(camera, new THREE.Vector3(0.1, 1.2, 3.2), 22, 30, 15.5);
+  } else if (aspect < 1.2) {
+    camera.fov = 36;
+    camera.updateProjectionMatrix();
+    orbit(camera, new THREE.Vector3(0.1, 0.2, 4.6), 22, 30, 15);
+  } else orbit(camera, new THREE.Vector3(0.1, 2.0, 2.4), 22, 21, 15);
   lobby.pinMoon(camera);
   // warm key light on the heroes
   const key = new THREE.SpotLight(0xffd6a0, 40, 20, 0.5, 0.8, 1.2);
@@ -189,7 +161,8 @@ function titleShot(aspect: number): Shot {
     vignette: 0.5,
     overlay(ui) {
       const layered = (cls: string, text: string) => `<span class="${cls}"><span class="sh">${text}</span><span class="ol">${text}</span><span class="fg">${text}</span></span>`;
-      ui.innerHTML = `<div class="logo">${layered('l1', 'PET ESCAPE')}${layered('l2', 'HOTEL')}<span class="moon">${ICON.moon}</span><br/><span class="plate">${ICON.paw} SNEAK · SWITCH · ESCAPE ${ICON.paw}</span></div>`;
+      const layout = aspect < 0.9 ? 'cover-portrait' : aspect < 1.2 ? 'cover-square' : '';
+      ui.innerHTML = `<div class="logo ${layout}">${layered('l1', 'PET ESCAPE')}${layered('l2', 'HOTEL')}<span class="moon">${ICON.moon}</span><br/><span class="plate">${ICON.paw} SNEAK · SWITCH · ESCAPE ${ICON.paw}</span></div>`;
     },
   };
 }

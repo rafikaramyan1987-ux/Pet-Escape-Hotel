@@ -38,7 +38,7 @@ const shade = (c: number, k: number): string => {
 };
 
 /** Honey wooden planks, 4×4 world units per tile. Returns colour + bump. */
-export function floorTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
+export function floorTextures(wood: number = PAL.floorWood): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
   const S = 1024;
   const [c, g] = canvas(S, S);
   const [b, gb] = canvas(S, S);
@@ -52,12 +52,12 @@ export function floorTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasT
     while (y < S) {
       const len = S * (0.45 + r() * 0.5);
       const k = (r() - 0.5) * 0.16;
-      g.fillStyle = shade(PAL.floorWood, k);
+      g.fillStyle = shade(wood, k);
       g.fillRect(i * pw, y, pw, len);
       // grain
       g.globalAlpha = 0.12;
       for (let j = 0; j < 9; j++) {
-        g.strokeStyle = shade(PAL.floorWood, -0.35);
+        g.strokeStyle = shade(wood, -0.35);
         g.lineWidth = 1 + r() * 2;
         g.beginPath();
         const x0 = i * pw + 6 + r() * (pw - 12);
@@ -67,13 +67,13 @@ export function floorTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasT
       }
       g.globalAlpha = 1;
       // seams
-      g.fillStyle = shade(PAL.floorWood, -0.55);
+      g.fillStyle = shade(wood, -0.55);
       g.fillRect(i * pw, y, pw, 4);
       gb.fillStyle = '#000';
       gb.fillRect(i * pw, y, pw, 5);
       y += len;
     }
-    g.fillStyle = shade(PAL.floorWood, -0.55);
+    g.fillStyle = shade(wood, -0.55);
     g.fillRect(i * pw, 0, 4, S);
     gb.fillStyle = '#000';
     gb.fillRect(i * pw, 0, 5, S);
@@ -82,16 +82,16 @@ export function floorTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasT
 }
 
 /** Dusty-teal wallpaper with soft stripes and little cream paw motifs. 2×2 world units per tile. */
-export function wallpaperTexture(): THREE.CanvasTexture {
+export function wallpaperTexture(base: number = PAL.wallpaper): THREE.CanvasTexture {
   const S = 512;
   const [c, g] = canvas(S, S);
-  g.fillStyle = hex(PAL.wallpaper);
+  g.fillStyle = hex(base);
   g.fillRect(0, 0, S, S);
   for (let i = 0; i < 8; i++) {
-    g.fillStyle = shade(PAL.wallpaper, i % 2 ? 0.06 : -0.03);
+    g.fillStyle = shade(base, i % 2 ? 0.06 : -0.03);
     g.fillRect(i * (S / 8), 0, S / 8, S);
   }
-  g.fillStyle = shade(PAL.wallpaper, 0.32);
+  g.fillStyle = shade(base, 0.32);
   const paw = (x: number, y: number, s: number) => {
     g.beginPath();
     g.ellipse(x, y + s * 0.35, s * 0.42, s * 0.34, 0, 0, Math.PI * 2);
@@ -265,20 +265,22 @@ export function signTexture(text: string, o: { w?: number; h?: number; bg: strin
 }
 
 /** Tabby stripes for a sphere whose poles point along ±Z (body) — rings perpendicular to the spine. */
-export function catBodyTexture(): THREE.CanvasTexture {
+export function catBodyTexture(furC: number = PAL.catFur, stripeC: number = PAL.catStripe, creamC: number = PAL.catCream): THREE.CanvasTexture {
   const W = 512;
   const H = 256;
   const [c, g] = canvas(W, H);
-  g.fillStyle = hex(PAL.catFur);
+  g.fillStyle = hex(furC);
   g.fillRect(0, 0, W, H);
   // belly (u = 0.25) lighter
+  const cr = new THREE.Color(creamC);
+  const rgb = `${Math.round(cr.r * 255)},${Math.round(cr.g * 255)},${Math.round(cr.b * 255)}`;
   const grad = g.createLinearGradient(0, 0, W, 0);
-  grad.addColorStop(0.05, 'rgba(243,239,232,0)');
-  grad.addColorStop(0.25, 'rgba(243,239,232,1)');
-  grad.addColorStop(0.45, 'rgba(243,239,232,0)');
+  grad.addColorStop(0.05, `rgba(${rgb},0)`);
+  grad.addColorStop(0.25, `rgba(${rgb},1)`);
+  grad.addColorStop(0.45, `rgba(${rgb},0)`);
   g.fillStyle = grad;
   g.fillRect(0, 0, W, H);
-  g.fillStyle = hex(PAL.catStripe);
+  g.fillStyle = hex(stripeC);
   const rows = [0.3, 0.42, 0.54, 0.66, 0.78];
   for (const [i, v] of rows.entries()) {
     const y = v * H;
@@ -295,13 +297,13 @@ export function catBodyTexture(): THREE.CanvasTexture {
 }
 
 /** Tabby forehead "M" + cheek stripes for an upright sphere head (front at u = 0.25). */
-export function catHeadTexture(): THREE.CanvasTexture {
+export function catHeadTexture(furC: number = PAL.catFur, stripeC: number = PAL.catStripe): THREE.CanvasTexture {
   const W = 512;
   const H = 256;
   const [c, g] = canvas(W, H);
-  g.fillStyle = hex(PAL.catFur);
+  g.fillStyle = hex(furC);
   g.fillRect(0, 0, W, H);
-  g.fillStyle = hex(PAL.catStripe);
+  g.fillStyle = hex(stripeC);
   const stripe = (u: number, y0: number, y1: number, w: number) => {
     g.beginPath();
     g.moveTo(u * W - w, y0 * H);
@@ -323,11 +325,11 @@ export function catHeadTexture(): THREE.CanvasTexture {
 }
 
 /** Stripes along the length of a tube (cat tail). */
-export function tailTexture(): THREE.CanvasTexture {
+export function tailTexture(furC: number = PAL.catFur, stripeC: number = PAL.catStripe): THREE.CanvasTexture {
   const [c, g] = canvas(256, 32);
-  g.fillStyle = hex(PAL.catFur);
+  g.fillStyle = hex(furC);
   g.fillRect(0, 0, 256, 32);
-  g.fillStyle = hex(PAL.catStripe);
+  g.fillStyle = hex(stripeC);
   for (let i = 0; i < 6; i++) g.fillRect(14 + i * 40, 0, 16, 32);
   g.fillRect(236, 0, 20, 32);
   return tex(c);
@@ -473,5 +475,161 @@ export function zTexture(): THREE.CanvasTexture {
   g.strokeText('z', 64, 66);
   g.fillStyle = '#e8ecff';
   g.fillText('z', 64, 66);
+  return tex(c);
+}
+
+/** Floor for a theme: planks (lobby, dining), spa tiles, garden grass, rooftop slabs. 4×4 world units per tile. */
+export function themeFloor(kind: 'planks' | 'darkPlanks' | 'tiles' | 'grass' | 'roof'): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
+  if (kind === 'planks') return floorTextures(PAL.floorWood);
+  if (kind === 'darkPlanks') return floorTextures(0xa8603c);
+  const S = 1024;
+  const [c, g] = canvas(S, S);
+  const [b, gb] = canvas(S, S);
+  const r = rng(kind.length * 31);
+  gb.fillStyle = '#fff';
+  gb.fillRect(0, 0, S, S);
+  if (kind === 'tiles') {
+    const n = 8;
+    const ts = S / n;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      g.fillStyle = (x + y) % 2 ? '#d8ebe6' : '#a9d0ca';
+      g.fillRect(x * ts, y * ts, ts, ts);
+      g.fillStyle = 'rgba(255,255,255,0.18)';
+      g.fillRect(x * ts + 8, y * ts + 8, ts * 0.4, 6);
+    }
+    g.fillStyle = '#7fa8a2';
+    gb.fillStyle = '#000';
+    for (let i = 0; i <= n; i++) {
+      g.fillRect(i * ts - 3, 0, 6, S);
+      g.fillRect(0, i * ts - 3, S, 6);
+      gb.fillRect(i * ts - 4, 0, 8, S);
+      gb.fillRect(0, i * ts - 4, S, 8);
+    }
+  } else if (kind === 'grass') {
+    g.fillStyle = '#4f8f45';
+    g.fillRect(0, 0, S, S);
+    for (let i = 0; i < 2600; i++) {
+      const x = r() * S;
+      const y = r() * S;
+      g.strokeStyle = r() < 0.5 ? 'rgba(120,190,90,0.6)' : 'rgba(40,100,45,0.6)';
+      g.lineWidth = 2 + r() * 2;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + (r() - 0.5) * 8, y - 8 - r() * 10);
+      g.stroke();
+      gb.fillStyle = `rgba(0,0,0,${0.2 + r() * 0.3})`;
+      gb.fillRect(x, y - 6, 2, 6);
+    }
+    g.fillStyle = 'rgba(255,240,200,0.5)';
+    for (let i = 0; i < 40; i++) {
+      g.beginPath();
+      g.arc(r() * S, r() * S, 3 + r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+  } else {
+    const n = 4;
+    const ts = S / n;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const k = (r() - 0.5) * 0.1;
+      g.fillStyle = shade(0x8d8a9a, k);
+      g.fillRect(x * ts, y * ts, ts, ts);
+      for (let i = 0; i < 60; i++) {
+        g.fillStyle = `rgba(0,0,0,${r() * 0.08})`;
+        g.fillRect(x * ts + r() * ts, y * ts + r() * ts, 3, 3);
+      }
+    }
+    g.fillStyle = '#5d5a6a';
+    gb.fillStyle = '#000';
+    for (let i = 0; i <= n; i++) {
+      g.fillRect(i * ts - 4, 0, 8, S);
+      g.fillRect(0, i * ts - 4, S, 8);
+      gb.fillRect(i * ts - 5, 0, 10, S);
+      gb.fillRect(0, i * ts - 5, S, 10);
+    }
+  }
+  return { map: tex(c, true, true), bump: tex(b, false, true) };
+}
+
+/** Squeaky boards: lighter, worn planks with little "creak" marks. */
+export function squeakTexture(): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = '#e2b47c';
+  g.fillRect(0, 0, 256, 256);
+  g.fillStyle = '#b07a48';
+  for (let i = 0; i <= 3; i++) g.fillRect(i * 85, 0, 5, 256);
+  g.strokeStyle = 'rgba(90,50,30,0.8)';
+  g.lineWidth = 6;
+  g.lineCap = 'round';
+  for (const [x, y] of [[60, 70], [190, 170]] as const) {
+    for (let k = 0; k < 3; k++) {
+      g.beginPath();
+      g.arc(x, y, 14 + k * 12, -0.7, 0.7);
+      g.stroke();
+    }
+  }
+  return tex(c);
+}
+
+/** Paw emblem for pressure buttons. */
+export function pawTexture(fg = '#3b2346', bg = '#ffd27a'): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = bg;
+  g.beginPath();
+  g.arc(128, 128, 128, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = fg;
+  g.beginPath();
+  g.ellipse(128, 150, 44, 36, 0, 0, Math.PI * 2);
+  g.fill();
+  for (const [x, y] of [[70, 108], [104, 70], [152, 70], [186, 108]] as const) {
+    g.beginPath();
+    g.ellipse(x, y, 18, 23, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  return tex(c);
+}
+
+/** Sky seen through a window, with the moon painted in. */
+export function windowSkyTexture(moon: boolean): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 320);
+  const grad = g.createLinearGradient(0, 0, 0, 320);
+  grad.addColorStop(0, '#0d0d2b');
+  grad.addColorStop(1, '#3b3a7a');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 320);
+  const r = rng(moon ? 5 : 9);
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = `rgba(255,248,230,${0.4 + r() * 0.6})`;
+    g.fillRect(r() * 256, r() * 240, 2, 2);
+  }
+  if (moon) {
+    const mg = g.createRadialGradient(170, 90, 10, 170, 90, 90);
+    mg.addColorStop(0, 'rgba(255,245,215,1)');
+    mg.addColorStop(0.35, 'rgba(255,245,215,1)');
+    mg.addColorStop(0.4, 'rgba(200,210,255,0.35)');
+    mg.addColorStop(1, 'rgba(200,210,255,0)');
+    g.fillStyle = mg;
+    g.fillRect(0, 0, 256, 256);
+  }
+  g.fillStyle = '#16143a';
+  for (let x = 0; x < 256; x += 50) g.fillRect(x, 270 - (x % 3) * 18, 44, 60);
+  return tex(c);
+}
+
+/** Text sprite (staff "?" / "!"). */
+export function iconTexture(text: string, bg: string, fg = '#3b2346'): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  g.fillStyle = bg;
+  g.strokeStyle = '#3b2346';
+  g.lineWidth = 10;
+  g.beginPath();
+  g.arc(64, 64, 52, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  g.fillStyle = fg;
+  g.font = "84px 'Lilita One', sans-serif";
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 64, 70);
   return tex(c);
 }

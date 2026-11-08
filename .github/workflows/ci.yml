@@ -24,6 +24,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - name: Unit tests (sim rules, 40 rooms, ads settle-once, saves, i18n)
+        run: npm test
+      - name: Playtest audit (bot solves all 40 rooms, no camping guards, no early sightings, win rates)
+        run: npm run audit
       - name: Build (web / GitHub Pages)
         run: npm run build
       - name: Build is path-independent (works under any repo name)
@@ -35,7 +39,7 @@ jobs:
           size=$(du -sb dist | cut -f1)
           echo "dist size: $size bytes"
           test "$size" -lt 5000000
-      - name: Playwright smoke test (390px)
+      - name: Playwright e2e (390px, web + CrazyGames builds)
         run: |
           npx playwright install --with-deps chromium
           npm run e2e

@@ -47,12 +47,14 @@ function setBlink(eyes: THREE.Group[], v: number) {
 }
 
 // ─── Dog: golden, floppy ears, red collar ─────────────────────────────────────────
-export function makeDog(): Actor {
+export type Fur = [number, number, number];
+
+export function makeDog(fur3: Fur = [PAL.dogFur, PAL.dogDark, PAL.dogCream]): Actor {
   const root = new THREE.Group();
   root.name = 'dog';
-  const furM = fur(PAL.dogFur);
-  const dark = fur(PAL.dogDark);
-  const cream = fur(PAL.dogCream);
+  const furM = fur(fur3[0]);
+  const dark = fur(fur3[1]);
+  const cream = fur(fur3[2]);
 
   const body = group();
   root.add(body);
@@ -102,7 +104,7 @@ export function makeDog(): Actor {
   cheeks(head, hc, R, 0.68, -0.08, 0.07);
   // eyebrows (tan dots, very expressive)
   for (const s of [-1, 1]) {
-    const b = onSphere(mesh(sph(0.04, 16, 10), fur(PAL.dogDark)), hc, R, [s * 0.38, 0.62, 1], 0.98);
+    const b = onSphere(mesh(sph(0.04, 16, 10), dark), hc, R, [s * 0.38, 0.62, 1], 0.98);
     b.scale.set(1.3, 0.7, 0.5);
     head.add(b);
   }
@@ -127,6 +129,11 @@ export function makeDog(): Actor {
   tail.add(tailM, tip);
   body.add(tail);
 
+  root.userData.head = head;
+  root.userData.hatAt = new THREE.Vector3(0, 0.56, 0.06);
+  root.userData.hatScale = 1;
+  root.userData.collar = collar;
+  root.userData.tag = tag;
   return {
     root,
     update(t) {
@@ -149,13 +156,13 @@ export function makeDog(): Actor {
 }
 
 // ─── Cat: grey tabby, pointy ears, curly striped tail ────────────────────────────
-export function makeCat(): Actor {
+export function makeCat(fur3: Fur = [PAL.catFur, PAL.catStripe, PAL.catCream]): Actor {
   const root = new THREE.Group();
   root.name = 'cat';
-  const furM = fur(PAL.catFur);
-  const cream = fur(PAL.catCream);
-  const bodyTex = new THREE.MeshPhysicalMaterial({ map: catBodyTexture(), roughness: 0.8, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xdfe4ee) });
-  const headTex = new THREE.MeshPhysicalMaterial({ map: catHeadTexture(), roughness: 0.8, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xdfe4ee) });
+  const furM = fur(fur3[0]);
+  const cream = fur(fur3[2]);
+  const bodyTex = new THREE.MeshPhysicalMaterial({ map: catBodyTexture(fur3[0], fur3[1], fur3[2]), roughness: 0.8, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xdfe4ee) });
+  const headTex = new THREE.MeshPhysicalMaterial({ map: catHeadTexture(fur3[0], fur3[1]), roughness: 0.8, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color(0xdfe4ee) });
   const pink = paint(PAL.pink, 0.6, 0.2);
 
   const body = group();
@@ -234,14 +241,21 @@ export function makeCat(): Actor {
     new THREE.Vector3(0.18, 0.82, -0.08),
     new THREE.Vector3(0.08, 0.86, 0.04),
   ]);
-  const tailTex = tailTexture();
+  const tailTex = tailTexture(fur3[0], fur3[1]);
   tailTex.wrapS = THREE.RepeatWrapping;
   const tube = mesh(new THREE.TubeGeometry(curve, 48, 0.06, 16, false), new THREE.MeshPhysicalMaterial({ map: tailTex, roughness: 0.8, sheen: 1, sheenColor: new THREE.Color(0xdfe4ee) }));
-  const tip = mesh(sph(0.06), fur(PAL.catStripe));
+  const tip = mesh(sph(0.06), fur(fur3[1]));
   tip.position.copy(curve.getPoint(1));
   tail.add(tube, tip);
   body.add(tail);
 
+  const collar = mesh(torus(0.17, 0.035), paint(PAL.collar, 0.4, 0.6));
+  at(collar, 0, 0.62, 0.1, Math.PI / 2 - 0.35, 0, 0);
+  body.add(collar);
+  root.userData.head = head;
+  root.userData.hatAt = new THREE.Vector3(0, 0.52, 0.04);
+  root.userData.hatScale = 0.95;
+  root.userData.collar = collar;
   return {
     root,
     update(t) {
@@ -261,11 +275,11 @@ export function makeCat(): Actor {
 }
 
 // ─── Hamster: an orange-cream ball with puffy cheeks ────────────────────────────
-export function makeHamster(): Actor {
+export function makeHamster(fur3: Fur = [PAL.hamFur, 0xd97a2c, PAL.hamCream]): Actor {
   const root = new THREE.Group();
   root.name = 'hamster';
-  const furM = fur(PAL.hamFur);
-  const cream = fur(PAL.hamCream);
+  const furM = fur(fur3[0]);
+  const cream = fur(fur3[2]);
   const pink = paint(PAL.pink, 0.55, 0.3);
 
   const body = group();
@@ -295,7 +309,7 @@ export function makeHamster(): Actor {
   body.add(nose, teeth);
   whiskers(body, 0.1, 0.3, 0.33, 0.16);
   // stripe on the head
-  const stripe = mesh(sph(0.12), fur(0xd97a2c));
+  const stripe = mesh(sph(0.12), fur(fur3[1]));
   at(stripe, 0, 0.6, 0.06);
   stripe.scale.set(0.9, 0.35, 1.3);
   body.add(stripe);
@@ -332,6 +346,14 @@ export function makeHamster(): Actor {
     body.add(foot);
   }
 
+  const collar = mesh(torus(0.2, 0.025), paint(PAL.collar, 0.4, 0.6));
+  at(collar, 0, 0.16, 0.06, Math.PI / 2 - 0.25, 0, 0);
+  collar.visible = false;
+  body.add(collar);
+  root.userData.head = body;
+  root.userData.hatAt = new THREE.Vector3(0, 0.62, 0.0);
+  root.userData.hatScale = 0.7;
+  root.userData.collar = collar;
   return {
     root,
     update(t) {
@@ -348,7 +370,7 @@ export function makeHamster(): Actor {
   };
 }
 
-export function makePet(kind: PetKind): Actor {
-  return kind === 'dog' ? makeDog() : kind === 'cat' ? makeCat() : makeHamster();
+export function makePet(kind: PetKind, fur3?: Fur): Actor {
+  return kind === 'dog' ? makeDog(fur3) : kind === 'cat' ? makeCat(fur3) : makeHamster(fur3);
 }
 

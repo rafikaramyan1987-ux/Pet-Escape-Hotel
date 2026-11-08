@@ -2,34 +2,47 @@ import { test, expect } from '@playwright/test';
 
 declare global {
   interface Window {
-    __art?: { ready: boolean; renderAt(t: number): void };
+    __game?: { state(): { mode: string; status?: string; room?: string; active?: string }; step(dt: number, n?: number): void; start(id: string, auto?: boolean): void };
   }
 }
 
-/** Phase 1 (art direction): the showcase lobby boots, renders WebGL, shows the HUD and fits a 390px phone. */
-test('showcase lobby renders with HUD and no errors', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto('/?t=1&q=low');
-  await page.waitForFunction(() => window.__art?.ready === true, null, { timeout: 120_000 });
+test.beforeEach(async ({ page }) => {
+  page.on('pageerror', (e) => {
+    throw e;
+  });
+});
+
+test('home → play: tip, HUD, switching pets, tap to move, pause', async ({ page }) => {
+  await page.goto('/?q=low');
   await expect(page).toHaveTitle('Pet Escape Hotel');
+  await expect(page.getByTestId('play')).toBeVisible({ timeout: 60_000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+  await page.getByTestId('play').click();
+  await page.getByTestId('tip-ok').click();
   await expect(page.getByTestId('pet-dog')).toBeVisible();
   await expect(page.getByTestId('ability')).toContainText('Dig');
-  // the canvas is not blank: sample a few pixels of the rendered frame
-  const lit = await page.evaluate(() => {
-    const c = document.getElementById('view') as HTMLCanvasElement;
-    const g = c.getContext('webgl2')!;
-    const px = new Uint8Array(4);
-    let sum = 0;
-    for (const [x, y] of [[0.5, 0.5], [0.4, 0.6], [0.6, 0.4]]) {
-      g.readPixels(Math.floor(c.width * x), Math.floor(c.height * y), 1, 1, g.RGBA, g.UNSIGNED_BYTE, px);
-      sum += px[0] + px[1] + px[2];
-    }
-    return sum;
-  });
-  expect(lit).toBeGreaterThan(60);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-  expect(overflow).toBe(false);
-  expect(errors).toEqual([]);
+  // tap the floor in front of the dog: it walks
+  await page.waitForFunction(() => window.__game!.state().mode === 'play', null, { timeout: 30_000 });
+  await page.mouse.click(195, 330);
+  await page.getByTestId('pause').click();
+  await expect(page.getByTestId('resume')).toBeVisible();
+  await page.getByTestId('resume').click();
+  await expect(page.getByTestId('pause')).toBeVisible();
+});
+
+test('the playtest bot escapes room 1-1 in the real game', async ({ page }) => {
+  await page.goto('/?q=low&room=1-1&auto=1');
+  await page.waitForFunction(() => window.__game?.state().mode === 'won', null, { timeout: 120_000 });
+  await expect(page.getByTestId('next')).toBeVisible();
+});
+
+test('shop try-on and French', async ({ page }) => {
+  await page.goto('/?q=low');
+  await page.getByTestId('shop').click();
+  await expect(page.getByTestId('tryon')).toBeVisible();
+  await page.goto('/?q=low');
+  await page.getByRole('button', { name: /settings/i }).click();
+  await page.getByTestId('lang-fr').click();
+  await page.getByTestId('close').click();
+  await expect(page.getByTestId('play')).toContainText(/Jouer|Continuer/);
 });

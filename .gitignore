@@ -8,3 +8,5 @@ playwright-report/
 *.log
 .DS_Store
 docs/art/.frames/
+build-zip/
+submission/trailers/.frames-*/

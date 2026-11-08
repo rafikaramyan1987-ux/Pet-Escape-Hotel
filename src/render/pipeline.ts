@@ -43,11 +43,14 @@ const GradeShader = {
 export class Pipeline {
   readonly renderer: THREE.WebGLRenderer;
   private composer: EffectComposer;
+  private renderPass: RenderPass;
   private gtao: GTAOPass | null = null;
   private bloom: UnrealBloomPass | null = null;
   private grade: ShaderPass;
+  private sceneRef: { current: THREE.Scene };
 
   constructor(canvas: HTMLCanvasElement, scene: THREE.Scene, camera: THREE.PerspectiveCamera, private q: Quality) {
+    this.sceneRef = { current: scene };
     const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
     r.setPixelRatio(q.pixelRatio);
     r.shadowMap.enabled = true;
@@ -63,7 +66,8 @@ export class Pipeline {
     this.composer = new EffectComposer(r, rt);
     this.composer.setPixelRatio(q.pixelRatio);
     this.composer.setSize(w, h);
-    this.composer.addPass(new RenderPass(scene, camera));
+    this.renderPass = new RenderPass(scene, camera);
+    this.composer.addPass(this.renderPass);
     if (q.ao) {
       const ao = new GTAOPass(scene, camera, w * q.pixelRatio, h * q.pixelRatio);
       ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 16 });
@@ -71,9 +75,10 @@ export class Pipeline {
       ao.blendIntensity = 0.9;
       // transparent things (glass, light beams, sprites) must not darken what is behind them
       const hidden: THREE.Object3D[] = [];
+      const sceneRef = this.sceneRef;
       const self = ao as unknown as { _overrideVisibility(): void; _restoreVisibility(): void };
       self._overrideVisibility = () => {
-        scene.traverse((o) => {
+        sceneRef.current.traverse((o) => {
           const m = (o as THREE.Mesh).material as THREE.Material | undefined;
           if (o.visible && (o.userData.noAO || (o as THREE.Sprite).isSprite || (m && !Array.isArray(m) && m.transparent))) {
             o.visible = false;
@@ -96,6 +101,15 @@ export class Pipeline {
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
     this.grade.uniforms.uAspect.value = w / h;
+  }
+
+  /** Swap the rendered scene (new room) keeping the same camera and post stack. */
+  setScene(scene: THREE.Scene): void {
+    this.renderPass.scene = scene;
+    if (this.gtao) {
+      this.gtao.scene = scene;
+      this.sceneRef.current = scene;
+    }
   }
 
   setBloom(strength: number, radius = 0.65, threshold = 1.0): void {

@@ -2,9 +2,33 @@ import { test, expect } from '@playwright/test';
 
 const SDK_URL = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
 
-/** CrazyGames build: one self-contained file, the only external request is the SDK, nothing fails. */
-test('CrazyGames build is one file and makes no failing request', async ({ page }) => {
-  await page.route(SDK_URL, (r) => r.fulfill({ contentType: 'text/javascript', body: 'window.CrazyGames = { SDK: {} };' }));
+/** Minimal stand-in for the CrazyGames SDK v3 (records calls, persists data in sessionStorage). */
+const STUB_SDK = `
+(() => {
+  const cg = (window.__cg = { calls: [] });
+  const load = () => JSON.parse(sessionStorage.getItem('cg-data') || '{}');
+  window.CrazyGames = { SDK: {
+    environment: 'crazygames',
+    init: async () => {},
+    ad: { requestAd: (type, cb) => { cg.calls.push('ad:' + type); cb.adStarted && cb.adStarted(); setTimeout(() => cb.adFinished && cb.adFinished(), 30); } },
+    game: {
+      gameplayStart: () => cg.calls.push('gameplayStart'),
+      gameplayStop: () => cg.calls.push('gameplayStop'),
+      loadingStart: () => cg.calls.push('loadingStart'),
+      loadingStop: () => cg.calls.push('loadingStop'),
+      happytime: () => cg.calls.push('happytime'),
+      settings: { muteAudio: false },
+      addSettingsChangeListener: () => {},
+    },
+    data: {
+      getItem: (k) => { const d = load(); return k in d ? d[k] : null; },
+      setItem: (k, v) => { const d = load(); d[k] = String(v); sessionStorage.setItem('cg-data', JSON.stringify(d)); },
+    },
+  } };
+})();`;
+
+test('CrazyGames build: one file, lands in gameplay, no failing request, SDK events', async ({ page }) => {
+  await page.route(SDK_URL, (r) => r.fulfill({ contentType: 'text/javascript', body: STUB_SDK }));
   const requests: string[] = [];
   const failed: string[] = [];
   const errors: string[] = [];
@@ -12,11 +36,16 @@ test('CrazyGames build is one file and makes no failing request', async ({ page 
   page.on('requestfailed', (r) => failed.push(r.url()));
   page.on('response', (r) => r.status() >= 400 && failed.push(`${r.status()} ${r.url()}`));
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/?t=1&q=low');
-  await page.waitForFunction(() => (window as unknown as { __art?: { ready: boolean } }).__art?.ready === true, null, { timeout: 120_000 });
-  const own = requests.filter((u) => u.startsWith('http://localhost') && !u.startsWith('data:'));
+  await page.goto('/');
+  // players land directly in gameplay (first room shows its tip card)
+  await expect(page.getByTestId('tip-ok')).toBeVisible({ timeout: 60_000 });
+  await page.getByTestId('tip-ok').click();
+  await expect(page.getByTestId('pet-dog')).toBeVisible();
+  const own = requests.filter((u) => u.startsWith('http://localhost'));
   expect(own.map((u) => new URL(u).pathname)).toEqual(['/']);
-  expect(requests.filter((u) => !u.startsWith('http://localhost') && !u.startsWith('data:'))).toEqual([SDK_URL]);
+  expect(requests.filter((u) => !u.startsWith('http://localhost') && !u.startsWith('data:') && !u.startsWith('blob:'))).toEqual([SDK_URL]);
+  const calls = await page.evaluate(() => (window as unknown as { __cg: { calls: string[] } }).__cg.calls);
+  expect(calls.slice(0, 3)).toEqual(['loadingStart', 'loadingStop', 'gameplayStart']);
   expect(failed).toEqual([]);
   expect(errors).toEqual([]);
 });
