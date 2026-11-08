@@ -3,27 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#2a2d5c" />
-    <meta name="description" content="Hush Hues — a calm colour-sorting puzzle. Move the balls until each tube holds one colour. No timer, no pressure, 300 levels." />
+    <meta name="theme-color" content="#1b1838" />
+    <meta name="description" content="Pet Escape Hotel — it's night at the pet hotel. Switch between a dog, a cat and a hamster, sneak past the sleepy night porter and reach the EXIT." />
     <!--web-only-->
-    <meta property="og:title" content="Hush Hues" />
-    <meta property="og:description" content="A calm colour-sorting puzzle. No timer, no pressure, 300 levels." />
+    <meta property="og:title" content="Pet Escape Hotel" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="./icon-512.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Hush Hues" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="icon" href="./icon-192.png" type="image/png" sizes="192x192" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <link rel="manifest" href="./manifest.webmanifest" />
     <!--/web-only-->
-    <title>Hush Hues</title>
+    <title>Pet Escape Hotel</title>
     <!--CRAZYGAMES_SDK-->
   </head>
   <body>
     <div id="app">
-      <main id="screen"><div id="boot" class="boot">Hush Hues…</div></main>
-      <div id="toast" role="status" aria-live="polite"></div>
+      <canvas id="view"></canvas>
+      <div id="ui"></div>
+      <div id="boot" class="boot">Pet Escape Hotel…</div>
     </div>
     <script type="module" src="./src/main.ts"></script>
   </body>

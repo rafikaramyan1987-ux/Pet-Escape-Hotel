@@ -1,123 +1,35 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
-interface Move {
-  from: number;
-  to: number;
-}
 declare global {
   interface Window {
-    __hh: { screen(): string; level(): number; moves(): number; solution(): Move[] | null };
+    __art?: { ready: boolean; renderAt(t: number): void };
   }
 }
 
-test.beforeEach(async ({ page }) => {
-  page.on('pageerror', (e) => {
-    throw e;
+/** Phase 1 (art direction): the showcase lobby boots, renders WebGL, shows the HUD and fits a 390px phone. */
+test('showcase lobby renders with HUD and no errors', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await page.goto('/?t=1&q=low');
+  await page.waitForFunction(() => window.__art?.ready === true, null, { timeout: 120_000 });
+  await expect(page).toHaveTitle('Pet Escape Hotel');
+  await expect(page.getByTestId('pet-dog')).toBeVisible();
+  await expect(page.getByTestId('ability')).toContainText('Dig');
+  // the canvas is not blank: sample a few pixels of the rendered frame
+  const lit = await page.evaluate(() => {
+    const c = document.getElementById('view') as HTMLCanvasElement;
+    const g = c.getContext('webgl2')!;
+    const px = new Uint8Array(4);
+    let sum = 0;
+    for (const [x, y] of [[0.5, 0.5], [0.4, 0.6], [0.6, 0.4]]) {
+      g.readPixels(Math.floor(c.width * x), Math.floor(c.height * y), 1, 1, g.RGBA, g.UNSIGNED_BYTE, px);
+      sum += px[0] + px[1] + px[2];
+    }
+    return sum;
   });
-  await page.goto('/');
-  await expect(page.getByTestId('play')).toBeVisible();
-});
-
-/** Solve the current level by real taps on the tubes; the solver only chooses which tubes to tap. */
-async function solveByTapping(page: Page): Promise<void> {
-  const moves = await page.evaluate(() => window.__hh.solution());
-  expect(moves).not.toBeNull();
-  for (const m of moves!) {
-    await page.getByTestId(`tube-${m.from}`).tap();
-    await page.getByTestId(`tube-${m.to}`).tap();
-  }
-}
-
-test('home fits 390px and switches language', async ({ page }) => {
+  expect(lit).toBeGreaterThan(60);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(overflow).toBe(false);
-  await expect(page).toHaveTitle('Hush Hues');
-  await page.getByTestId('settings').click();
-  await page.getByTestId('lang').selectOption('fr');
-  await expect(page.getByTestId('play')).toContainText('Jouer');
-  await page.getByTestId('settings').click();
-  await page.getByTestId('lang').selectOption('en');
-  await expect(page.getByTestId('play')).toContainText('Play');
-});
-
-test('solve level 1 and reach level 2', async ({ page }) => {
-  await page.getByTestId('play').click();
-  await expect(page.getByTestId('level-label')).toHaveText('Level 1');
-  await expect(page.getByTestId('hint')).not.toBeEmpty();
-  // tubes are big touch targets
-  const box = await page.getByTestId('tube-0').boundingBox();
-  expect(box!.width).toBeGreaterThanOrEqual(44);
-  expect(box!.height).toBeGreaterThanOrEqual(150);
-
-  await solveByTapping(page);
-  await expect(page.getByTestId('win')).toBeVisible();
-  await expect(page.getByTestId('win')).toHaveAttribute('data-stars', '3');
-  await page.getByTestId('next').click();
-  await expect(page.getByTestId('level-label')).toHaveText('Level 2');
-  await expect(page.getByTestId('moves')).toHaveText('Moves 0');
-
-  // progress is saved: after a reload level 2 is open, level 3 still locked
-  await page.reload();
-  await page.getByTestId('levels').click();
-  await expect(page.getByTestId('level-2')).toBeEnabled();
-  await expect(page.getByTestId('level-3')).toBeDisabled();
-});
-
-test('undo, extra tube and restart work without the SDK', async ({ page }) => {
-  await page.getByTestId('play').click();
-  const moves = await page.evaluate(() => window.__hh.solution());
-  const m = moves![0]!;
-  await page.getByTestId(`tube-${m.from}`).tap();
-  await page.getByTestId(`tube-${m.to}`).tap();
-  await expect(page.getByTestId('moves')).toHaveText('Moves 1');
-  await page.getByTestId('undo').tap();
-  await expect(page.getByTestId('moves')).toHaveText('Moves 0');
-  await expect(page.getByTestId('undo')).toBeDisabled();
-
-  const before = await page.locator('.tube').count();
-  await page.getByTestId('extra').tap();
-  await expect(page.locator('.tube')).toHaveCount(before + 1);
-  await expect(page.getByTestId('extra')).toBeDisabled();
-
-  await page.getByTestId('restart').tap();
-  await expect(page.getByTestId('moves')).toHaveText('Moves 0');
-});
-
-test('works from any sub-path (repo name independent)', async ({ page }) => {
-  // serve the same build under an arbitrary folder, like GitHub Pages does for /<repo-name>/
-  // anything requested outside the sub-folder (an absolute "/assets/..." path) fails
-  await page.route(/^http:\/\/localhost:4173\/(?!Any-Repo-Name\/)/, (route) => route.abort());
-  await page.route('**/Any-Repo-Name/**', (route) => {
-    const url = route.request().url().replace('/Any-Repo-Name/', '/');
-    return route.continue({ url });
-  });
-  const errors: string[] = [];
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto('/Any-Repo-Name/');
-  await expect(page.getByTestId('play')).toBeVisible();
-  await page.getByTestId('play').click();
-  await expect(page.getByTestId('level-label')).toHaveText('Level 1');
   expect(errors).toEqual([]);
-});
-
-test('a new mechanic shows its intro once, and hard levels carry a badge', async ({ page }) => {
-  await page.evaluate(() =>
-    localStorage.setItem('hush-hues.save.v1', JSON.stringify({ version: 1, unlocked: 30, stars: [], settings: {}, seenIntros: [] })),
-  );
-  await page.reload();
-  await page.getByTestId('levels').click();
-  await page.getByTestId('level-21').click();
-  await expect(page.getByTestId('intro')).toHaveAttribute('data-mechanic', 'hidden');
-  await page.getByTestId('intro-ok').click();
-  await expect(page.getByTestId('intro')).toHaveCount(0);
-  expect(await page.locator('.ball.hidden').count()).toBeGreaterThan(0);
-  // seen once: not shown again
-  await page.getByTestId('restart').click();
-  await expect(page.getByTestId('intro')).toHaveCount(0);
-
-  await page.getByTestId('home').click();
-  await page.getByTestId('levels').click();
-  await expect(page.getByTestId('level-20')).toHaveClass(/hard/);
-  await page.getByTestId('level-20').click();
-  await expect(page.getByTestId('hard-badge')).toBeVisible();
 });

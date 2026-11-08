@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
 
 /**
@@ -48,18 +47,16 @@ export default defineConfig(({ mode }) => {
       __TARGET__: JSON.stringify(cg ? 'crazygames' : 'web'),
     },
     plugins: [crazyGames(cg)],
-    // icons + PWA manifest only for the web build
+    // icons only for the web build
     publicDir: cg ? false : 'public',
     build: {
       outDir: cg ? 'dist-crazygames' : 'dist',
       target: 'es2020',
-      assetsInlineLimit: 0,
+      // CrazyGames: fonts and any other asset become data: URIs inside the single index.html
+      assetsInlineLimit: cg ? 100_000_000 : 0,
+      chunkSizeWarningLimit: 2000,
       reportCompressedSize: false,
       modulePreload: false,
-    },
-    test: {
-      include: ['tests/**/*.test.ts'],
-      environment: 'node',
     },
   };
 });

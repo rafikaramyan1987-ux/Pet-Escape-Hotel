@@ -24,13 +24,12 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
       - name: Build (web / GitHub Pages)
         run: npm run build
       - name: Build is path-independent (works under any repo name)
         run: |
           grep -q 'src="./assets/' dist/index.html
-          ! grep -rnE '"/assets/|Last-Breath|Hush-Hues/' dist/
+          ! grep -rnE '"/assets/|Pet-Escape-Hotel/' dist/
       - name: Bundle size must stay under 5 MB
         run: |
           size=$(du -sb dist | cut -f1)
@@ -56,7 +55,7 @@ jobs:
       - name: Upload CrazyGames build (download = ready-to-upload zip)
         uses: actions/upload-artifact@v7
         with:
-          name: hush-hues-crazygames
+          name: pet-escape-hotel-crazygames
           path: dist-crazygames/
           if-no-files-found: error
       - name: Upload Pages artifact
