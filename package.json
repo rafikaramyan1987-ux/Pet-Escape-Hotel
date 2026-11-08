@@ -1,33 +1,40 @@
 {
-  "name": "hush-hues",
+  "name": "pet-escape-hotel",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
-  "description": "Hush Hues - a calm, mobile-first colour ball-sort puzzle",
+  "description": "Pet Escape Hotel - a cosy night-time stealth escape with three pets (Three.js)",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:crazygames": "vite build --mode crazygames",
-    "zip:crazygames": "npm run build:crazygames && cd dist-crazygames && rm -f ../hush-hues-crazygames.zip && zip -r -X ../hush-hues-crazygames.zip .",
+    "zip:crazygames": "npm run build:crazygames && cd dist-crazygames && rm -f ../pet-escape-hotel-crazygames.zip && zip -r -X ../pet-escape-hotel-crazygames.zip .",
     "preview": "vite preview --port 4173 --strictPort",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
     "e2e": "playwright test",
-    "icons": "node scripts/icons.mjs",
-    "levels": "node scripts/gen-levels.mjs",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "art": "node scripts/render-art.mjs",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "test": "vitest run",
+    "audit": "tsx scripts/audit.ts"
+  },
+  "dependencies": {
+    "@fontsource/fredoka": "^5.3.0",
+    "@fontsource/lilita-one": "^5.3.0",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.20.5",
+    "@types/three": "^0.187.0",
     "eslint": "^9.39.5",
     "globals": "^17.14.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.9",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.5",
+    "vite": "^8.3.6",
     "vitest": "^5.1.0"
   }
 }

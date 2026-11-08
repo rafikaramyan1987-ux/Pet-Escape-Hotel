@@ -1,69 +1,41 @@
-# Hush Hues — CrazyGames submission
+# Pet Escape Hotel: CrazyGames submission
+
+| File | Notes |
+|---|---|
+| `pet-escape-hotel-v1.zip` | Upload as HTML5. One self-contained `index.html` inside the folder `pet-escape-hotel-v1/` (JS, CSS and fonts inlined; the only external request is the CrazyGames SDK). About 1 MB. |
+| `covers/landscape-1920x1080.png`, `covers/portrait-800x1200.png`, `covers/square-800x800.png` | Rendered from the game's 3D scene; the top-left corner is kept free of text. |
+| `trailers/landscape-1920x1080.mp4`, `trailers/portrait-1080x1620.mp4` | 18 s of real gameplay (the playtest bot playing four rooms, HUD on), then the title card. |
+
+Rebuild everything with `node scripts/submission.mjs` (or `zip`, `covers`, `trailers`).
 
 ## Title
+Pet Escape Hotel
 
-**Hush Hues**
+## Short description (EN)
+It's night at the pet hotel. Switch between a dog, a cat and a hamster, sneak past the sleepy staff and escape!
 
-## Description — English (~150 words)
+## Description (EN)
+When the lights go out at the cosy Pet Escape Hotel, three guests decide it's time for an adventure. Biscuit the dog digs under fences, Miso the cat leaps onto shelves where no one can see her, and Peanut the hamster squeezes through holes and glass tubes. Switch between them at any time: every pet moves on its own, so leave the others safely hidden in beds, plants and carriers while you sneak one past the staff.
 
-Hush Hues is a calm colour-sorting puzzle. Tap a tube to lift its top ball, tap another tube to drop it: a ball can
-land in an empty tube or on a ball of the same colour. Fill every tube with a single colour and the level is sorted.
+Bernard the night porter, the chef, the maid, the gardener and the night guard patrol with their flashlights. Stay out of the light, don't run near them (they hear it!), and they'll never know. Five floors, 40 hand-made rooms: the lobby, dining hall and kitchen, spa and laundry, the garden terrace and the rooftop. Each floor brings a new twist: squeaky floorboards, paw-button gates that need teamwork, security cameras and a locked rooftop EXIT. Collect 3 bones per room for stars, earn coins and dress your pets up with hats, collars and new fur.
 
-There is no timer and no way to lose. Undo a move, restart whenever you like, or take one extra tube when a board feels
-tight. Over 300 hand-tuned levels ease you in with three colours and slowly grow to twelve, adding fresh ideas
-along the way: hidden balls that reveal their colour at the top, taller tubes, locked tubes that open when a colour is
-complete, small helper tubes and frozen balls that thaw when you play next to them. Every fifth level is a breather,
-every tenth a hard level worth double stars.
+## Short description (FR)
+C'est la nuit à l'hôtel pour animaux. Joue le chien, le chat et le hamster, échappe au personnel endormi et file vers la sortie !
 
-Soft sounds, smooth motion, colour-blind symbols and gentle vibration make every move pleasant. Take your time.
+## Description (FR)
+Quand les lumières s'éteignent au douillet Pet Escape Hotel, trois pensionnaires décident de partir à l'aventure. Biscuit le chien creuse sous les clôtures, Miso la chatte saute sur les étagères où personne ne la voit, et Cacahuète le hamster se faufile dans les trous et les tubes en verre. Change d'animal quand tu veux : chacun se déplace seul, alors cache les autres dans les lits, les plantes et les caisses pendant que tu en guides un.
 
-## Description — Français (~150 mots)
-
-Hush Hues est un puzzle de tri de couleurs tout en douceur. Touchez un tube pour soulever la bille du dessus, puis
-un autre tube pour la déposer : une bille peut aller dans un tube vide ou sur une bille de la même couleur. Quand chaque
-tube ne contient plus qu’une seule couleur, le niveau est trié.
-
-Pas de chronomètre, impossible de perdre. Annulez un coup, recommencez quand vous voulez, ou prenez un tube de plus
-quand le plateau devient serré. Plus de 300 niveaux soigneusement dosés commencent avec trois couleurs et montent
-lentement jusqu’à douze, avec de nouvelles idées en chemin : billes cachées qui se révèlent en haut du tube, tubes plus
-hauts, tubes verrouillés qui s’ouvrent quand une couleur est complète, petits tubes d’appoint et billes gelées qui
-fondent quand on joue à côté. Un niveau sur cinq est une pause douce, un sur dix un niveau difficile aux étoiles doublées.
-
-Sons doux, animations fluides, symboles pour daltoniens et légères vibrations rendent chaque coup agréable.
-Prenez votre temps.
+Le portier Bernard, le chef, la femme de chambre, le jardinier et le veilleur de nuit patrouillent avec leur lampe torche. Reste hors de la lumière, ne cours pas près d'eux (ils entendent !) et ils n'y verront que du feu. Cinq étages et 40 salles faites à la main : le hall, la salle à manger et la cuisine, le spa et la laverie, la terrasse et le toit. Chaque étage apporte sa nouveauté : lattes qui grincent, grilles à boutons-pattes qu'il faut ouvrir en équipe, caméras de surveillance et SORTIE fermée à clé sur le toit. Ramasse 3 os par salle pour les étoiles, gagne des pièces et habille tes animaux : chapeaux, colliers et nouveaux pelages.
 
 ## Controls
+- **Touch / mouse:** tap the floor to walk there; tap a portrait (or a pet) to switch; ability button = dig / jump / squeeze next to the pet; the paw button toggles sneak/run; the map button shows the whole room.
+- **Keyboard:** WASD or the arrow keys to move · 1 2 3 or Tab to switch pets · Shift to run · Space / E for the ability · M for the map · R to restart · Esc to pause.
 
-| Input | Action |
-|---|---|
-| Tap / click a tube | Lift its top ball; tap another tube to drop it there |
-| Tap the same tube again | Put the ball back |
-| Undo button · `U` · `Ctrl+Z` | Undo the last move (3 free per level, more with an optional rewarded ad) |
-| Restart button · `R` | Restart the level |
-| Extra tube button | One more empty tube (once per level, optional rewarded ad) |
-| `1`–`9`, `0` · `Tab` + `Enter` | Pick tubes with the keyboard |
-
-## Category and tags
-
-- **Category:** Puzzle
-- **Tags:** sorting, color, relaxing, casual, brain, logic, ball sort, mobile, one-hand, offline-friendly
-- **Orientation:** portrait on mobile (also plays on desktop in a centered column)
-- **Audience / rating:** suitable for everyone; no violence, no text chat, no user-generated content,
-  no purchases (fits PEGI 3, well within the PEGI 12 limit)
-- **Languages:** English, French (browser language, switch in Settings)
-
-## Files
-
-| What | Where |
-|---|---|
-| Game zip to upload | GitHub Actions → workflow **CI & GitHub Pages** → latest run on `main` → artifact **`hush-hues-crazygames`** (download, then upload the zip as is: `index.html` at its root). Locally: `npm run zip:crazygames` → `hush-hues-crazygames.zip` |
-| Covers | `submission/covers/landscape-1920x1080.png`, `portrait-800x1200.png`, `square-800x800.png` |
-| Preview videos | `submission/videos/landscape-1920x1080.mp4`, `portrait-1080x1620.mp4` (H.264, no audio) |
-
-Regenerate covers and videos from the real game (needs the web build served on port 4173):
-
-```bash
-npm run build && npm run preview &   # serves dist/ on http://localhost:4173
-node scripts/covers.mjs              # -> submission/covers/*.png
-node scripts/videos.mjs              # -> submission/videos/*.mp4 (records real-time play, ~1 min)
-```
+## Details
+- **Category:** Puzzle (stealth). Also fits Casual, Adventure.
+- **Tags:** stealth, pets, puzzle, cute, dog, cat, hamster, escape, 3d, sneak, family, switch characters, mobile.
+- **Orientation:** portrait-first on mobile; landscape is supported too.
+- **Languages:** English, French.
+- **Content:** no violence, no chat, no user content, no purchases with real money (coins come from gameplay and the daily treat).
+- **Ads:** midgame ads only between rooms, never before the 3rd room is finished, at most one every ~2 minutes. All rewarded ads are optional: skip a room after 5 tries, and double the daily treat.
+- **SDK:** v3 with `init` first, then loading start/stop, gameplay start/stop (paused during ads, menus and when the tab is hidden), `happytime` on each floor finale, Data Module saves (with a localStorage fallback) and the global mute setting.
