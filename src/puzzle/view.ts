@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { applyCosmetics, characterLook } from '../art/look';
 import { type Actor, at, cyl, fur, group, matte, mesh, metal, paint, puck, rbox, torus } from '../art/kit';
 import { glowSprite, sparkle } from '../art/fx';
-import { makePet } from '../art/pets';
+import { type Fur, makePet } from '../art/pets';
 import { floorTextures, gradientTexture } from '../art/textures';
 import type { Look } from '../game/save';
 import { PLANK_TINTS, SCREW_HEX, headTexture, plankTexture } from './look';
@@ -91,15 +91,16 @@ export class PuzzleView {
   private trayAnchor = new THREE.Vector3();
   private boxScale = 1;
   private orbit = 0;
+  private camHome: { pos: THREE.Vector3; target: THREE.Vector3; portrait: boolean } | null = null;
   onSound: (s: Sound) => void = () => undefined;
 
-  constructor(readonly puzzle: Puzzle, look: Look, quality: 'high' | 'low') {
+  constructor(readonly puzzle: Puzzle, look: Look, quality: 'high' | 'low', fur?: Fur) {
     this.camera = new THREE.PerspectiveCamera(36, 1, 0.2, 100);
     this.scene.background = gradientTexture([[0, '#ffe9c7'], [0.5, '#ffd3b5'], [1, '#f7b9a8']]);
     this.buildRoom(quality);
     this.buildObject(puzzle.def);
     // pet inside
-    this.pet = makePet(puzzle.def.pet);
+    this.pet = makePet(puzzle.def.pet, fur);
     applyCosmetics(this.pet.root, look);
     characterLook(this.pet.root, 0xffffff, 0.35, true);
     this.petRoot = group(this.pet.root);
@@ -110,6 +111,54 @@ export class PuzzleView {
     this.buildPlanks();
     this.buildToolArea();
     this.scene.add(this.object);
+    if (puzzle.history.length) this.syncState();
+  }
+
+  /** Rebuild the picture of a level already in progress (after undo): planks gone, screws in boxes/tray. */
+  private syncState(): void {
+    const p = this.puzzle;
+    p.plankGone.forEach((gone, i) => {
+      if (gone) this.planks[i].visible = false;
+    });
+    for (const b of this.boxes) {
+      const box = p.boxes[b.index];
+      if (!box) continue;
+      b.landed = box.screws.length;
+      box.screws.forEach((sid, slot) => {
+        const g = sid >= 0 ? this.screws[sid].g : this.ghostScrew(box.color);
+        if (sid >= 0) this.screws[sid].flying = true;
+        b.g.add(g);
+        g.position.set(-0.42 + slot * 0.42, 0.5, 0.06);
+        g.rotation.set(-0.45, 0, 0);
+        g.scale.setScalar(0.88);
+      });
+    }
+    p.tray.forEach((sid, slot) => {
+      if (sid === null) return;
+      const s = this.screws[sid];
+      s.flying = true;
+      this.trayG.add(s.g);
+      s.g.position.copy(this.traySlots[slot]).add(new THREE.Vector3(0, 0.12, 0));
+      s.g.rotation.set(-0.5, 0, 0);
+      s.g.scale.setScalar(0.88);
+    });
+    // screws already packed away in closed boxes
+    p.removed.forEach((r, sid) => {
+      if (r && !this.screws[sid].flying) this.screws[sid].g.visible = false;
+    });
+    this.refreshDim(true);
+  }
+
+  /** A screw of a colour with no plank (filled in by the hammer booster). */
+  private ghostScrew(color: Color): THREE.Group {
+    const g = group();
+    const cap = mesh(puck(SCREW_R, 0.1, 0.04, 40), new THREE.MeshPhysicalMaterial({ color: SCREW_HEX[color], roughness: 0.42, clearcoat: 0.45 }), false, false);
+    cap.rotation.x = Math.PI / 2;
+    cap.position.z = 0.05;
+    const head = mesh(new THREE.CircleGeometry(SCREW_R * 0.93, 40), new THREE.MeshStandardMaterial({ map: headTexture(color), roughness: 0.6 }), false, false);
+    head.position.z = 0.101;
+    g.add(cap, head);
+    return g;
   }
 
   // ─── building ────────────────────────────────────────────────────────────
@@ -148,9 +197,9 @@ export class PuzzleView {
     const H = OPEN_H + 0.5;
     const D = 1.7;
     const kind = def.object;
-    const frameCol = kind === 'cage' ? 0x4f9fd8 : kind === 'kennel' ? 0xf0b13e : 0xc9874f;
+    const frameCol = kind === 'cage' ? 0x4f9fd8 : kind === 'kennel' ? 0xf0b13e : kind === 'carrier' ? 0xff8fb8 : kind === 'toybox' ? 0x6fcf7a : 0xc9874f;
     const frameMat = kind === 'cage' ? paint(frameCol, 0.35, 0.6) : paint(frameCol, 0.6, 0.25);
-    const innerMat = matte(kind === 'cage' ? 0xe8f2fb : 0x8a5a3a, 0.9);
+    const innerMat = matte(kind === 'cage' ? 0xe8f2fb : kind === 'kennel' ? 0xffe2b0 : 0xf2c79a, 0.9);
     // back + sides + floor + top (an open-front box)
     const back = mesh(rbox(W, H, 0.14, 0.05), innerMat);
     back.position.set(0, 0, -D + 0.07);
@@ -190,6 +239,28 @@ export class PuzzleView {
       const handle = mesh(torus(0.5, 0.07, Math.PI), paint(frameCol, 0.35, 0.6));
       handle.position.set(0, H / 2 + 0.1, -D / 2);
       o.add(handle);
+    } else if (kind === 'carrier') {
+      const handle = mesh(torus(0.6, 0.09, Math.PI), paint(0xffffff, 0.4, 0.5));
+      handle.position.set(0, H / 2 + 0.05, -D / 2);
+      o.add(handle);
+      for (let i = 0; i < 5; i++) {
+        const vent = mesh(rbox(0.12, 0.5, 0.05, 0.04), matte(0xd96a95, 0.8));
+        vent.position.set((W / 2 + 0.11) * (i % 2 ? 1 : -1), -0.5 + Math.floor(i / 2) * 0.5, -D / 2);
+        vent.rotation.y = Math.PI / 2;
+        o.add(vent);
+      }
+    } else if (kind === 'toybox') {
+      const lid = mesh(rbox(W + 0.3, 0.3, D + 0.3, 0.1), paint(0xffc928, 0.45, 0.4));
+      lid.position.set(0, H / 2 + 0.55, -D - 0.1);
+      lid.rotation.x = -1.15;
+      o.add(lid);
+      const cols = [0xf0464b, 0x3d8bf2, 0xffc928, 0x9a5cf0];
+      for (let i = 0; i < 4; i++) {
+        const blk = mesh(rbox(0.36, 0.36, 0.36, 0.06), paint(cols[i], 0.45, 0.4));
+        blk.position.set((i % 2 ? 1 : -1) * (W / 2 + 0.2), -H / 2 + 0.2 + (i > 1 ? 0.4 : 0), 0.3 - (i > 1 ? 0.2 : 0));
+        blk.rotation.y = i * 0.5;
+        o.add(blk);
+      }
     } else if (kind === 'kennel') {
       for (const s of [-1, 1]) {
         const r = mesh(rbox(W * 0.62, 0.18, D + 0.4, 0.06), paint(0xe2574c, 0.5, 0.35));
@@ -254,23 +325,37 @@ export class PuzzleView {
 
   private buildToolArea(): void {
     this.scene.add(this.trayG, this.queueG);
-    const n = this.puzzle.def.tray;
-    const W = n * 0.72 + 0.3;
-    const base = mesh(rbox(W, 0.22, 0.75, 0.1), paint(0x8f9bd6, 0.45, 0.4));
-    const lip = mesh(rbox(W - 0.1, 0.06, 0.62, 0.05), paint(0x6f7cc0, 0.5, 0.3), false, false);
-    lip.position.y = 0.11;
-    this.trayG.add(base, lip);
-    for (let i = 0; i < n; i++) {
-      const x = -((n - 1) * 0.72) / 2 + i * 0.72;
-      const hole = mesh(new THREE.CircleGeometry(0.22, 28), matte(0x3a3f6a, 1), false, false);
-      at(hole, x, 0.145, 0, -Math.PI / 2, 0, 0);
-      this.trayG.add(hole);
-      this.traySlots.push(new THREE.Vector3(x, 0.15, 0));
-    }
+    this.buildTray(this.puzzle.tray.length);
     this.puzzle.boxes.forEach((b, i) => {
       if (b) this.addBox(b.uid, b.color, i, 0, false);
     });
     this.refreshQueue();
+  }
+
+  /** (Re)build the holding tray with n slots; screws already in it move to their slot. */
+  private buildTray(n: number): void {
+    for (const c of this.trayG.children.slice()) if (c.userData.trayPart) this.trayG.remove(c);
+    const W = n * 0.72 + 0.3;
+    const base = mesh(rbox(W, 0.22, 0.75, 0.1), paint(0x8f9bd6, 0.45, 0.4));
+    const lip = mesh(rbox(W - 0.1, 0.06, 0.62, 0.05), paint(0x6f7cc0, 0.5, 0.3), false, false);
+    lip.position.y = 0.11;
+    base.userData.trayPart = lip.userData.trayPart = true;
+    this.trayG.add(base, lip);
+    this.traySlots = [];
+    for (let i = 0; i < n; i++) {
+      const x = -((n - 1) * 0.72) / 2 + i * 0.72;
+      const extra = i >= this.puzzle.def.tray;
+      const hole = mesh(new THREE.CircleGeometry(0.22, 28), matte(extra ? 0x2f7a5a : 0x3a3f6a, 1), false, false);
+      at(hole, x, 0.145, 0, -Math.PI / 2, 0, 0);
+      hole.userData.trayPart = true;
+      this.trayG.add(hole);
+      this.traySlots.push(new THREE.Vector3(x, 0.15, 0));
+    }
+    this.puzzle.tray.forEach((sid, slot) => {
+      if (sid === null) return;
+      const s = this.screws[sid];
+      if (s.g.parent === this.trayG) s.g.position.copy(this.traySlots[slot]).add(new THREE.Vector3(0, 0.12, 0));
+    });
   }
 
   private makeBox(color: Color): { g: THREE.Group; lid: THREE.Group } {
@@ -323,6 +408,39 @@ export class PuzzleView {
     }
   }
 
+  /** A closed grey box with a tick: this colour slot is finished (the row of toolboxes never empties). */
+  private addDoneBox(index: number): void {
+    const g = group();
+    const body = mesh(rbox(1.5, 0.62, 0.78, 0.12), paint(0xd9d3e6, 0.5, 0.3));
+    const lid = mesh(rbox(1.5, 0.08, 0.78, 0.03), paint(0xc4bcd6, 0.5, 0.3));
+    lid.position.y = 0.35;
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const x = c.getContext('2d')!;
+    x.fillStyle = '#3fc46a';
+    x.beginPath();
+    x.arc(64, 64, 60, 0, Math.PI * 2);
+    x.fill();
+    x.strokeStyle = '#fff';
+    x.lineWidth = 16;
+    x.lineCap = 'round';
+    x.beginPath();
+    x.moveTo(36, 66);
+    x.lineTo(56, 86);
+    x.lineTo(94, 44);
+    x.stroke();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const badge = mesh(new THREE.CircleGeometry(0.2, 32), new THREE.MeshBasicMaterial({ map: tex }), false, false);
+    badge.position.set(0, -0.02, 0.395);
+    g.add(body, lid, badge);
+    const bv: BoxView = { uid: -index - 1, color: 'red', index, g, lid: group(), landed: 0, full: true, readyAt: this.now, leaving: false };
+    this.boxes.push(bv);
+    this.scene.add(g);
+    this.placeBox(bv, 1);
+    this.tween(0, 0.35, (k) => this.placeBox(bv, 1 - backOut(k)));
+  }
+
   /** offset: 0 = in place, 1 = off to the right. */
   private placeBox(b: BoxView, offset: number): void {
     const a = this.boxAnchor[b.index];
@@ -330,6 +448,7 @@ export class PuzzleView {
     b.g.position.copy(a).add(new THREE.Vector3(offset * 4.5, 0, 0));
     b.g.scale.setScalar(this.boxScale * (1 - offset * 0.3));
     b.g.userData.offset = offset;
+    b.g.rotation.y = this.orbit;
   }
 
   private refreshQueue(): void {
@@ -385,8 +504,8 @@ export class PuzzleView {
       // tall phones: the width limits the object, so lift it towards the tray
       objNdcY = aspect < 0.62 ? -0.2 : -0.32;
     } else {
-      halfH = objH / 2 / 0.8;
-      objNdcY = -0.06;
+      halfH = objH / 2 / 0.56;
+      objNdcY = -0.36;
     }
     const D = halfH / tanH + 0.4;
     const tilt = THREE.MathUtils.degToRad(7);
@@ -394,13 +513,14 @@ export class PuzzleView {
     cam.position.set(Math.sin(this.orbit) * D, target.y + Math.tan(tilt) * D, Math.cos(this.orbit) * D);
     cam.lookAt(target);
     cam.updateMatrixWorld();
+    this.camHome = { pos: cam.position.clone(), target: target.clone(), portrait };
     const zPlane = 1.0;
     const n = this.puzzle.def.open;
     const left = this.ndcToWorld(-1, 0, zPlane);
     const right = this.ndcToWorld(1, 0, zPlane);
     const worldW = right.x - left.x;
     this.boxAnchor = [];
-    const trayN = this.puzzle.def.tray * 0.72 + 0.3;
+    const trayN = Math.max(this.puzzle.def.tray, 6) * 0.72 + 0.3;
     if (portrait) {
       for (let i = 0; i < n; i++) this.boxAnchor.push(this.ndcToWorld(n === 1 ? 0 : -0.46 + (0.92 * i) / (n - 1), 0.62, zPlane));
       this.boxScale = Math.min(1, (worldW * 0.34) / 1.5);
@@ -408,11 +528,11 @@ export class PuzzleView {
       this.trayG.scale.setScalar(Math.min(1, (worldW * 0.8) / trayN));
       this.queueG.position.copy(this.ndcToWorld(0, 0.335, zPlane));
     } else {
-      for (let i = 0; i < n; i++) this.boxAnchor.push(this.ndcToWorld(-0.66, n === 1 ? 0.15 : 0.42 - (0.62 * i) / (n - 1), zPlane));
-      this.boxScale = Math.min(1.1, (worldW * 0.2) / 1.5);
-      this.trayAnchor = this.ndcToWorld(0.71, 0.2, zPlane);
-      this.trayG.scale.setScalar(Math.min(1, (worldW * 0.23) / trayN));
-      this.queueG.position.copy(this.ndcToWorld(-0.66, -0.48, zPlane));
+      for (let i = 0; i < n; i++) this.boxAnchor.push(this.ndcToWorld(n === 1 ? 0 : -0.2 + (0.4 * i) / (n - 1), 0.66, zPlane));
+      this.boxScale = Math.min(1.1, (worldW * 0.15) / 1.5);
+      this.trayAnchor = this.ndcToWorld(0, 0.43, zPlane);
+      this.trayG.scale.setScalar(Math.min(1, (worldW * 0.34) / trayN));
+      this.queueG.position.copy(this.ndcToWorld(0.36, 0.66, zPlane));
     }
     this.trayG.position.copy(this.trayAnchor);
     this.trayG.rotation.x = 0.35;
@@ -424,6 +544,21 @@ export class PuzzleView {
   setOrbit(a: number): void {
     this.orbit = a;
     this.layout(this.layoutAspect || 1);
+    // toolboxes and tray stay facing the player while the crate turns
+    this.trayG.rotation.y = a;
+    this.queueG.rotation.y = a;
+    for (const b of this.boxes) b.g.rotation.y = a;
+  }
+
+  /** Free the GPU resources of this level (a new view is built for each level / undo). */
+  dispose(): void {
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry?.dispose();
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      for (const mat of mats) mat?.dispose();
+    });
   }
 
   // ─── picking ─────────────────────────────────────────────────────────────
@@ -561,6 +696,34 @@ export class PuzzleView {
         case 'won':
           this.tween(1.0, 0.01, () => undefined, () => this.rescue());
           break;
+        case 'traySlot':
+          this.buildTray(e.slots);
+          this.onSound('pop');
+          break;
+        case 'hammer':
+          this.smash(e.plank, e.screws);
+          break;
+        case 'ghostToBox': {
+          const b = this.boxes.find((x) => x.uid === e.uid);
+          if (!b) break;
+          const g = this.ghostScrew(e.color);
+          this.scene.add(g);
+          const from = this.planks.length ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3();
+          g.position.copy(from);
+          const wait = Math.max(0.35, b.readyAt - this.now);
+          this.tween(wait, 0.45, (k) => {
+            const end = this.boxSlotWorld(b, e.slot);
+            g.position.lerpVectors(from, end, easeInOut(k));
+            g.position.y += Math.sin(k * Math.PI) * 1.0;
+            g.rotation.set(-0.45 * k, 0, k * Math.PI * 2);
+          }, () => {
+            b.g.attach(g);
+            g.position.copy(b.g.worldToLocal(this.boxSlotWorld(b, e.slot)));
+            this.onSound('land');
+            this.landedInBox(b);
+          });
+          break;
+        }
         case 'lost':
           this.onSound('fail');
           this.tween(0, 0.5, (k) => {
@@ -570,6 +733,70 @@ export class PuzzleView {
       }
     }
     this.refreshDim();
+  }
+
+  /** Hammer booster: a big toy hammer bonks the plank; its screws pop off with sparkles. */
+  private smash(plank: number, screws: number[]): void {
+    const g = this.planks[plank];
+    const target = new THREE.Vector3();
+    g.getWorldPosition(target);
+    const hammer = group();
+    const handle = mesh(cyl(0.07, 0.07, 1.4, 12), paint(0xc9874f, 0.6, 0.2));
+    handle.position.y = -0.7;
+    const headM = mesh(rbox(0.9, 0.45, 0.45, 0.12), paint(0xf0464b, 0.4, 0.5));
+    hammer.add(handle, headM);
+    hammer.position.copy(target).add(new THREE.Vector3(0.9, 1.9, 0.9));
+    this.scene.add(hammer);
+    this.onSound('unscrew');
+    this.tween(0, 0.3, (k) => {
+      hammer.rotation.z = 1.2 - ease(k) * 2.2;
+      hammer.position.copy(target).add(new THREE.Vector3(0.9 - k * 0.6, 1.9 - k * 1.3, 0.9));
+    }, () => {
+      this.onSound('thud');
+      this.dust(target);
+      for (const sid of screws) {
+        const s = this.screws[sid];
+        s.flying = true;
+        const p0 = new THREE.Vector3();
+        s.g.getWorldPosition(p0);
+        this.scene.attach(s.g);
+        const v = new THREE.Vector3((Math.random() - 0.5) * 3, 2.5 + Math.random(), 1.5);
+        this.tween(0, 0.5, (k) => {
+          s.g.position.copy(p0).addScaledVector(v, k).add(new THREE.Vector3(0, -6 * k * k, 0));
+          s.g.rotation.z += 0.3;
+          s.g.scale.setScalar(1 - k);
+        }, () => (s.g.visible = false));
+      }
+    });
+    this.tween(0.45, 0.3, (k) => hammer.scale.setScalar(1 - k), () => hammer.removeFromParent());
+  }
+
+  // ─── hints ───────────────────────────────────────────────────────────────
+  private hintRing: THREE.Mesh | null = null;
+  /** Pulsing ring around the next safe screw (-1 clears it). */
+  highlight(id: number): void {
+    if (this.hintRing) {
+      this.hintRing.removeFromParent();
+      this.hintRing = null;
+    }
+    if (id < 0) return;
+    const ring = mesh(new THREE.RingGeometry(SCREW_R * 1.15, SCREW_R * 1.55, 40), new THREE.MeshBasicMaterial({ color: 0xfff27a, transparent: true, opacity: 0.9, toneMapped: false, depthWrite: false }), false, false);
+    ring.position.z = 0.12;
+    ring.userData.noAO = true;
+    this.screws[id].g.add(ring);
+    this.hintRing = ring;
+  }
+
+  /** Plank under a screen point (hammer booster), or -1. */
+  pickPlank(px: number, py: number, w: number, h: number): number {
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((px / w) * 2 - 1, -(py / h) * 2 + 1), this.camera);
+    const live = this.planks.map((g, i) => ({ g, i })).filter(({ i }) => !this.puzzle.plankGone[i]);
+    const hits = ray.intersectObjects(live.map((x) => x.g), true);
+    if (!hits.length) return -1;
+    let o: THREE.Object3D | null = hits[0].object;
+    while (o && !this.planks.includes(o as THREE.Group)) o = o.parent;
+    return o ? this.planks.indexOf(o as THREE.Group) : -1;
   }
 
   private landedInBox(b: BoxView): void {
@@ -585,6 +812,7 @@ export class PuzzleView {
       this.tween(0.6, 0.4, (k) => this.placeBox(b, easeInOut(k)), () => {
         b.g.removeFromParent();
         this.boxes = this.boxes.filter((x) => x !== b);
+        if (!this.puzzle.boxes[b.index] && !this.boxes.some((x) => x.index === b.index)) this.addDoneBox(b.index);
       });
       // sparkle
       const sp = sparkle(0xffffff, 0.6);
@@ -598,8 +826,8 @@ export class PuzzleView {
     const g = this.planks[id];
     this.onSound('plank');
     this.scene.attach(g);
-    const r = Math.sin(id * 12.9898) * 0.5;
-    this.falling.push({ m: g, v: new THREE.Vector3(r * 1.2, 1.6, 2.2), w: new THREE.Vector3(1.5 + r, r * 2, 2.5 * Math.sign(r || 1)), t: 0, bounced: 0 });
+    const side = g.position.x < -0.05 ? -1 : g.position.x > 0.05 ? 1 : id % 2 ? 1 : -1;
+    this.falling.push({ m: g, v: new THREE.Vector3(side * (2.2 + (id % 3) * 0.4), 1.4, 0.7), w: new THREE.Vector3(1.2, side * 1.5, side * 2.6), t: 0, bounced: 0 });
     this.refreshDim(true);
   }
 
@@ -618,17 +846,40 @@ export class PuzzleView {
     }
   }
 
-  /** The pet hops out of the object, confetti and hearts. */
+  /** The pet jumps out towards the camera and celebrates; the empty crate poofs away. */
   private rescue(): void {
     this.rescued = this.now;
     this.onSound('rescue');
+    this.scene.attach(this.petRoot);
     const p0 = this.petRoot.position.clone();
-    const p1 = new THREE.Vector3(0, FLOOR_Y + 0.02, 1.4);
-    this.tween(0, 0.7, (k) => {
+    const p1 = new THREE.Vector3(0, FLOOR_Y + 0.02, 1.7);
+    const s0 = this.petRoot.scale.x;
+    this.tween(0, 0.75, (k) => {
       this.petRoot.position.lerpVectors(p0, p1, k);
-      this.petRoot.position.y = p0.y + (p1.y - p0.y) * k + Math.sin(k * Math.PI) * 1.5;
+      this.petRoot.position.y = p0.y + (p1.y - p0.y) * k + Math.sin(k * Math.PI) * 1.9;
       this.petRoot.rotation.y = k * Math.PI * 2;
+      this.petRoot.scale.setScalar(s0 * (1 + 0.1 * k));
     }, () => this.onSound('pop'));
+    // the crate shrinks away with a puff, so no empty dark box is left behind
+    const o = this.object;
+    this.tween(0.85, 0.4, (k) => {
+      const e = k < 0.3 ? 1 + k * 0.4 : 1.12 * (1 - (k - 0.3) / 0.7);
+      o.scale.setScalar(Math.max(0.001, e));
+    }, () => {
+      o.visible = false;
+      this.onSound('pop');
+    });
+    this.tween(1.05, 0.01, () => undefined, () => {
+      this.dust(new THREE.Vector3(0, FLOOR_Y + 0.4, 0));
+      this.dust(new THREE.Vector3(-1, FLOOR_Y + 1.2, 0));
+      this.dust(new THREE.Vector3(1, FLOOR_Y + 1.2, 0));
+      for (let i = 0; i < 6; i++) {
+        const sp = sparkle(0xfff3c4, 0.8);
+        sp.position.set((i - 2.5) * 0.6, FLOOR_Y + 1 + (i % 2) * 0.8, 0.2);
+        this.scene.add(sp);
+        this.tween(i * 0.04, 0.5, (k) => sp.scale.setScalar(1.1 * Math.sin(k * Math.PI)), () => sp.removeFromParent());
+      }
+    });
     // confetti
     const N = 140;
     const geo = new THREE.PlaneGeometry(0.12, 0.2);
@@ -641,7 +892,7 @@ export class PuzzleView {
       const a = Math.random() * Math.PI * 2;
       const sp = 3 + Math.random() * 4;
       this.confettiState.push({
-        p: new THREE.Vector3(0, 0.5, 1.2),
+        p: new THREE.Vector3(0, 0.2, 2.0),
         v: new THREE.Vector3(Math.cos(a) * sp * 0.6, 5 + Math.random() * 4, Math.sin(a) * sp * 0.4 + 1),
         r: new THREE.Euler(Math.random() * 6, Math.random() * 6, 0),
         w: new THREE.Vector3(Math.random() * 10, Math.random() * 10, Math.random() * 10),
@@ -714,8 +965,8 @@ export class PuzzleView {
         f.v.z *= 0.6;
         f.w.multiplyScalar(0.4);
       }
-      if (f.t > 1.4) {
-        const k = Math.min(1, (f.t - 1.4) / 0.4);
+      if (f.t > 1.0) {
+        const k = Math.min(1, (f.t - 1.0) / 0.35);
         f.m.scale.setScalar(1 - k);
         if (k >= 1) {
           f.m.removeFromParent();
@@ -737,13 +988,32 @@ export class PuzzleView {
     });
     if (this.rescued >= 0) {
       const rt = t - this.rescued;
-      if (rt > 0.7) this.petRoot.position.y = FLOOR_Y + 0.02 + Math.abs(Math.sin((rt - 0.7) * 6)) * 0.25 * Math.max(0, 1 - (rt - 0.7) / 3);
+      if (rt > 0.75) {
+        const h = Math.abs(Math.sin((rt - 0.75) * 5.5));
+        this.petRoot.position.y = FLOOR_Y + 0.02 + h * 0.45;
+        this.petRoot.rotation.y = Math.sin((rt - 0.75) * 2.75) * 0.5;
+      }
       this.hearts.forEach((h, i) => {
         const p = ((rt * 0.5 + i / 5) % 1);
         h.position.set(this.petRoot.position.x + Math.sin(i * 2 + rt) * 0.8, this.petRoot.position.y + 1.4 + p * 1.6, this.petRoot.position.z);
         const s = 0.35 * Math.sin(p * Math.PI);
         h.scale.set(s, s, 1);
       });
+    }
+    // after the jump the camera glides in and frames the pet in the upper half (the result card goes below)
+    if (this.rescued >= 0 && this.camHome) {
+      const k = easeInOut(Math.min(1, Math.max(0, (t - this.rescued - 0.8) / 0.9)));
+      const pet = this.petRoot.position.clone();
+      pet.y = FLOOR_Y;
+      const h = this.camHome;
+      const lookAt = pet.clone().add(new THREE.Vector3(0, h.portrait ? -0.9 : 0.3, 0));
+      // distance from the visible half-width we want around the pet (~2.6 units), whatever the screen shape
+      const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+      const d = h.portrait ? 2.6 / (tanH * this.camera.aspect) : 9;
+      const pos = pet.clone().add(new THREE.Vector3(0, d * 0.3, d));
+      const tg = h.target.clone().lerp(lookAt, k);
+      this.camera.position.copy(h.pos).lerp(pos, k);
+      this.camera.lookAt(tg);
     }
     if (this.confetti) {
       this.confettiT += dt;

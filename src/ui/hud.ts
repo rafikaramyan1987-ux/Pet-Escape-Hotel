@@ -17,7 +17,7 @@ export class Hud {
   }
 
   private coins(): string {
-    return `<div class="card pill coins">${ICON.coin}<b>${this.g.save.coins}</b></div>`;
+    return `<div class="card pill coins" data-coins>${ICON.coin}<b data-testid="coins">${this.g.save.coins}</b></div>`;
   }
 
   level(n: number, tutorial: boolean): void {
@@ -58,6 +58,7 @@ export class Hud {
   }
 
   frame(dt: number): void {
+    this.animateCoins(dt);
     if (!this.hand) return;
     const g = this.g;
     // the hand stays for the whole first level, and for the first two taps of the second
@@ -86,11 +87,13 @@ export class Hud {
     this.root.appendChild(d);
   }
 
-  won(pet: string, coins: number): void {
-    this.overlay(`<div class="card dialog won">
-      <h2>${t('rescued', { pet })}</h2>
-      <div class="bigstars">${[0, 1, 2].map((k) => `<i class="star on" style="--d:${k * 0.15}s">${ICON.star}</i>`).join('')}</div>
-      <div class="gain">${ICON.coin}<b>${t('coins', { n: coins })}</b></div>
+  /** Big result card, then the coins fly into the counter and it counts up. */
+  won(pet: string, coins: number, stars: number, before: number): void {
+    this.overlay(`<div class="card dialog won result">
+      <div class="ribbon">${t('rescuedTitle')}</div>
+      <p class="sub">${t('rescued', { pet })}</p>
+      <div class="bigstars">${[0, 1, 2].map((k) => `<i class="star ${k < stars ? 'on' : ''}" style="--d:${0.2 + k * 0.18}s">${ICON.star}</i>`).join('')}</div>
+      <div class="gain" data-gain>${ICON.coin}<b>${t('coins', { n: coins })}</b></div>
       <button class="big primary" data-act="next" data-testid="next">${ICON.play}<span>${t('next')}</span></button>
     </div>`, 'gold soft');
     this.root.querySelector<HTMLElement>('[data-act=next]')!.addEventListener('click', (e) => {
@@ -98,6 +101,53 @@ export class Hud {
       this.g.audio.play('click');
       this.g.next();
     });
+    const from = this.root.querySelector<HTMLElement>('[data-gain] svg')!.getBoundingClientRect();
+    const counter = this.root.querySelector<HTMLElement>('[data-coins]');
+    const label = this.root.querySelector<HTMLElement>('[data-testid=coins]');
+    if (!counter || !label) return;
+    const to = counter.getBoundingClientRect();
+    const n = Math.min(10, Math.max(4, Math.round(coins / 5)));
+    const app = document.getElementById('app')!;
+    const fx = from.left + from.width / 2;
+    const fy = from.top + from.height / 2;
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement('div');
+      el.className = 'flycoin';
+      el.innerHTML = ICON.coin;
+      el.style.left = `${fx}px`;
+      el.style.top = `${fy}px`;
+      el.style.opacity = '0';
+      app.appendChild(el);
+      this.flying.push({
+        el, t: -(0.6 + i * 0.08), dx: to.left + 18 - fx, dy: to.top + to.height / 2 - fy,
+        land: () => {
+          this.g.audio.play('land');
+          label.textContent = String(before + Math.round((coins * (i + 1)) / n));
+          counter.classList.remove('bump');
+          void counter.offsetWidth;
+          counter.classList.add('bump');
+        },
+      });
+    }
+  }
+
+  /** Coins flying into the counter, driven by the game clock (so recordings capture them). */
+  private flying: { el: HTMLElement; t: number; dx: number; dy: number; land: () => void }[] = [];
+  private animateCoins(dt: number): void {
+    for (const c of this.flying.slice()) {
+      c.t += dt;
+      if (c.t < 0) continue;
+      const k = Math.min(1, c.t / 0.6);
+      const e = k * k * (3 - 2 * k);
+      const lift = Math.sin(k * Math.PI) * -60;
+      c.el.style.opacity = '1';
+      c.el.style.transform = `translate(${c.dx * e}px, ${c.dy * e + lift}px) scale(${1.1 - 0.4 * k})`;
+      if (k >= 1) {
+        c.el.remove();
+        c.land();
+        this.flying.splice(this.flying.indexOf(c), 1);
+      }
+    }
   }
 
   lost(): void {

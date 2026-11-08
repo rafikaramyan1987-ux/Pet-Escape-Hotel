@@ -11,6 +11,12 @@ import { Hud } from '../ui/hud';
 
 export type Mode = 'play' | 'won' | 'lost';
 
+/** Coins for a rescue: grows slowly with the level, a bonus on boss levels, a little less after retries. */
+export function rewardFor(level: number, fails: number): number {
+  const base = 10 + Math.floor(level / 2) + (level % 10 === 0 ? 25 : 0);
+  return Math.max(5, base - fails * 2);
+}
+
 /**
  * Screw & Rescue controller: one level at a time (model + 3D view), tap input, tutorial hand,
  * results, progress and the CrazyGames gameplay events around real play only.
@@ -27,6 +33,8 @@ export class Game {
   private resultShown = false;
   private last = performance.now();
   private taps = 0;
+  /** Fails on the current level (stars, hints). */
+  fails = 0;
   vibrate = true;
   private autoNext = 0;
 
@@ -63,6 +71,7 @@ export class Game {
     this.mode = 'play';
     this.resultShown = false;
     this.taps = 0;
+    this.fails = 0;
     this.botWait = 1.2;
     this.hud.level(def.id, def.tutorial === true);
     this.platform.gameplayStart();
@@ -116,7 +125,9 @@ export class Game {
   }
 
   retry(): void {
+    const keep = this.fails + 1;
     this.start(this.index);
+    this.fails = keep;
   }
 
   private finish(): void {
@@ -125,10 +136,14 @@ export class Game {
     if (this.mode === 'won') {
       const def = LEVELS[this.index];
       this.platform.happytime();
-      const coins = recordRoom(this.save, String(def.id), 3, 3, 0);
+      const coins = rewardFor(def.id, this.fails);
+      const before = this.save.coins;
+      const stars = this.fails === 0 ? 3 : this.fails === 1 ? 2 : 1;
+      recordRoom(this.save, String(def.id), stars, 3, 0);
+      this.save.coins = before + coins;
       this.persist();
       this.audio.play('coin');
-      this.hud.won(t(def.pet), coins);
+      this.hud.won(t(def.pet), coins, stars, before);
     } else {
       this.hud.lost();
     }

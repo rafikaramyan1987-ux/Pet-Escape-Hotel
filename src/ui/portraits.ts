@@ -6,6 +6,42 @@ import type { Look } from '../game/save';
 import { item } from '../game/shop';
 
 /** Render round head portraits of the pets from the real 3D models (used by the pet switcher). */
+/** Portraits of collection pets (kind + fur). Rendered once, cached by key. */
+const cache = new Map<string, string>();
+export function renderPetPortraits(pets: { kind: PetKind; v: number; fur?: Fur }[], size = 160): string[] {
+  const todo = pets.filter((p) => !cache.has(`${p.kind}:${p.v}`));
+  if (todo.length) {
+    const canvas = document.createElement('canvas');
+    const r = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+    r.setPixelRatio(1);
+    r.setSize(size, size, false);
+    r.toneMapping = THREE.NeutralToneMapping;
+    r.outputColorSpace = THREE.SRGBColorSpace;
+    r.setClearColor(0x000000, 0);
+    for (const p of todo) {
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight(0xc9d2ff, 0x7a5040, 1.6));
+      const key = new THREE.DirectionalLight(0xffe2b8, 2.6);
+      key.position.set(2, 3, 4);
+      scene.add(key);
+      const pet = makePet(p.kind, p.fur);
+      pet.update(0.4);
+      pet.root.rotation.y = -0.3;
+      scene.add(pet.root);
+      const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+      const y = p.kind === 'hamster' ? 0.32 : 0.62;
+      cam.position.set(0.3, y + 0.35, p.kind === 'hamster' ? 2.1 : 3.0);
+      cam.lookAt(0, y, 0);
+      r.render(scene, cam);
+      cache.set(`${p.kind}:${p.v}`, canvas.toDataURL('image/png'));
+      scene.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    }
+    r.dispose();
+    r.forceContextLoss();
+  }
+  return pets.map((p) => cache.get(`${p.kind}:${p.v}`)!);
+}
+
 export function renderPortraits(size = 256, looks?: Record<PetKind, Look>): Record<PetKind, string> {
   const canvas = document.createElement('canvas');
   const r = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });

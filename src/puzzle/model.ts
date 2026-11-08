@@ -47,6 +47,8 @@ export interface LevelDef {
   tutorial?: boolean;
 }
 
+export type Action = { t: 'tap'; id: number } | { t: 'slot' } | { t: 'hammer'; plank: number };
+
 export interface Screw {
   id: number;
   plank: number;
@@ -76,6 +78,9 @@ export type PuzzleEvent =
   | { type: 'boxFull'; box: number; uid: number }
   | { type: 'boxOpen'; box: number; uid: number; color: Color }
   | { type: 'plankFall'; plank: number }
+  | { type: 'hammer'; plank: number; screws: number[] }
+  | { type: 'ghostToBox'; color: Color; box: number; uid: number; slot: number }
+  | { type: 'traySlot'; slots: number }
   | { type: 'won' }
   | { type: 'lost' };
 
@@ -124,8 +129,10 @@ export class Puzzle {
   next: number;
   status: 'play' | 'won' | 'lost' = 'play';
   private uid = 0;
-  /** Taps so far (for undo and replays). */
-  history: number[] = [];
+  /** Every action so far (taps and boosters), so a state can be rebuilt for undo. */
+  history: Action[] = [];
+  /** Hammered screws not yet counted in a box (a box of that colour opens later). */
+  credit: Partial<Record<Color, number>> = {};
 
   constructor(def: LevelDef) {
     this.def = def;
@@ -154,6 +161,7 @@ export class Puzzle {
     c.boxes = this.boxes.map((b) => (b ? { ...b, screws: b.screws.slice() } : null));
     c.tray = this.tray.slice();
     c.history = this.history.slice();
+    c.credit = { ...this.credit };
     return c;
   }
 
@@ -178,7 +186,7 @@ export class Puzzle {
     const ev: PuzzleEvent[] = [];
     const s = this.screws[id];
     this.removed[id] = true;
-    this.history.push(id);
+    this.history.push({ t: 'tap', id });
     const bi = this.boxes.findIndex((b) => b && b.color === s.color && b.screws.length < BOX_SIZE);
     if (bi >= 0) {
       const b = this.boxes[bi]!;
@@ -205,7 +213,7 @@ export class Puzzle {
     if (this.plankGone.every(Boolean)) {
       this.status = 'won';
       ev.push({ type: 'won' });
-    } else if (this.trayCount() === this.def.tray && !this.freeScrews().some((k) => this.boxes.some((b) => b && b.color === this.screws[k].color))) {
+    } else if (this.trayCount() === this.tray.length && !this.freeScrews().some((k) => this.boxes.some((b) => b && b.color === this.screws[k].color))) {
       // tray full and no free screw can go into an open box: stuck
       this.status = 'lost';
       ev.push({ type: 'lost' });
@@ -231,6 +239,12 @@ export class Puzzle {
       for (let i = 0; i < this.boxes.length; i++) {
         const b = this.boxes[i];
         if (!b) continue;
+        while ((this.credit[b.color] ?? 0) > 0 && b.screws.length < BOX_SIZE) {
+          this.credit[b.color]!--;
+          b.screws.push(-1);
+          ev.push({ type: 'ghostToBox', color: b.color, box: i, uid: b.uid, slot: b.screws.length - 1 });
+          changed = true;
+        }
         for (let t = 0; t < this.tray.length && b.screws.length < BOX_SIZE; t++) {
           const sid = this.tray[t];
           if (sid !== null && this.screws[sid].color === b.color) {
@@ -244,6 +258,55 @@ export class Puzzle {
     }
   }
 
+  /** Booster: one more tray slot for this level. */
+  addTraySlot(): PuzzleEvent[] {
+    if (this.status !== 'play') return [];
+    this.tray.push(null);
+    this.history.push({ t: 'slot' });
+    return [{ type: 'traySlot', slots: this.tray.length }];
+  }
+
+  /** Booster: smash a plank. Its screws count towards their colour's boxes (now, or when that box opens). */
+  hammer(plank: number): PuzzleEvent[] {
+    if (this.status !== 'play' || this.plankGone[plank]) return [];
+    const p = this.planks[plank];
+    const ev: PuzzleEvent[] = [];
+    const ids = p.screws.filter((k) => !this.removed[k]);
+    this.history.push({ t: 'hammer', plank });
+    ev.push({ type: 'hammer', plank, screws: ids });
+    for (const k of ids) {
+      this.removed[k] = true;
+      const c = this.screws[k].color;
+      this.credit[c] = (this.credit[c] ?? 0) + 1;
+    }
+    this.plankGone[plank] = true;
+    this.settleBoxes(ev);
+    ev.push({ type: 'plankFall', plank });
+    if (this.plankGone.every(Boolean)) {
+      this.status = 'won';
+      ev.push({ type: 'won' });
+    }
+    return ev;
+  }
+
+  /** Replay a list of actions on a fresh puzzle (undo = replay all but the last tap). */
+  static replay(def: LevelDef, actions: Action[]): Puzzle {
+    const p = new Puzzle(def);
+    for (const a of actions) {
+      if (a.t === 'tap') p.tap(a.id);
+      else if (a.t === 'slot') p.addTraySlot();
+      else p.hammer(a.plank);
+    }
+    return p;
+  }
+
+  /** History without the last tap (boosters stay used). null when there is nothing to undo. */
+  undoActions(): Action[] | null {
+    const i = this.history.map((a) => a.t).lastIndexOf('tap');
+    if (i < 0) return null;
+    return this.history.slice(0, i).concat(this.history.slice(i + 1).filter((a) => a.t !== 'tap'));
+  }
+
   /** Canonical key of the gameplay-relevant state (for the solver). */
   key(): string {
     let k = '';
@@ -251,7 +314,7 @@ export class Puzzle {
     k += `|${this.next}|`;
     for (const b of this.boxes) k += b ? `${b.color[0]}${b.color[1]}${b.screws.length},` : '-,';
     const tray = this.tray.filter((t) => t !== null).map((t) => this.screws[t!].color).sort();
-    return k + tray.join('');
+    return k + tray.join('') + (this.tray.length !== this.def.tray ? `#${this.tray.length}` : '');
   }
 }
 

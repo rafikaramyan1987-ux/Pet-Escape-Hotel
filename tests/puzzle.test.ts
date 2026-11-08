@@ -60,8 +60,20 @@ describe('rules', () => {
   });
 });
 
-describe('opening levels', () => {
-  for (const def of LEVELS) {
+describe('levels', () => {
+  it('there are 100 levels, numbered 1..100', () => {
+    expect(LEVELS.map((l) => l.id)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1));
+  });
+  for (const def of LEVELS.filter((l) => l.id > 10)) {
+    it(`level ${def.id}: valid and solvable with tray margin ≥ 1`, () => {
+      expect(validateLevel(def)).toEqual([]);
+      const r = solve(new Puzzle(def), { worst: false });
+      expect(r.complete).toBe(true);
+      expect(r.solvable).toBe(true);
+      expect(r.margin).toBeGreaterThanOrEqual(1);
+    });
+  }
+  for (const def of LEVELS.filter((l) => l.id <= 10)) {
     it(`level ${def.id}: valid, solvable, and impossible to fail`, () => {
       expect(validateLevel(def)).toEqual([]);
       const r = solve(new Puzzle(def));

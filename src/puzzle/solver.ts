@@ -18,9 +18,22 @@ export interface SolveResult {
   bestPath: number[];
   states: number;
   complete: boolean;
+  /** Whether worstPeak/canFail were computed (exhaustive pass). */
+  worstChecked: boolean;
+  ms: number;
 }
 
-export function solve(start: Puzzle, maxStates = 400_000): SolveResult {
+export interface SolveOptions {
+  /** Explore every order of taps (worst peak, can-fail). Needed for levels 1–10; costly on big levels. */
+  worst?: boolean;
+  /** State budget; the result says `complete: false` when it runs out. */
+  maxStates?: number;
+}
+
+export function solve(start: Puzzle, opts: SolveOptions | number = {}): SolveResult {
+  const o: SolveOptions = typeof opts === 'number' ? { maxStates: opts, worst: true } : opts;
+  const maxStates = o.maxStates ?? 400_000;
+  const t0 = Date.now();
   // best peak to win from each state (Infinity = cannot win)
   const memo = new Map<string, { peak: number; move: number }>();
   let states = 0;
@@ -76,7 +89,7 @@ export function solve(start: Puzzle, maxStates = 400_000): SolveResult {
   let worstPeak = 0;
   let canFail = false;
   const seen = new Set<string>();
-  const stack: Puzzle[] = [start.clone()];
+  const stack: Puzzle[] = o.worst === false ? [] : [start.clone()];
   while (stack.length) {
     const p = stack.pop()!;
     const k = p.key();
@@ -101,12 +114,14 @@ export function solve(start: Puzzle, maxStates = 400_000): SolveResult {
   return {
     solvable: bestPeak !== Infinity,
     bestPeak,
-    margin: start.def.tray - bestPeak,
+    margin: start.tray.length - bestPeak,
     worstPeak,
     canFail,
     bestPath,
     states: Math.max(states, seen.size),
     complete,
+    worstChecked: o.worst !== false,
+    ms: Date.now() - t0,
   };
 }
 
@@ -117,6 +132,6 @@ function goesToBox(p: Puzzle, s: number): number {
 
 /** Best next screw from the current state (hints). -1 when the position is lost. */
 export function hint(p: Puzzle): number {
-  const r = solve(p, 60_000);
+  const r = solve(p, { worst: false, maxStates: 60_000 });
   return r.bestPath[0] ?? -1;
 }
