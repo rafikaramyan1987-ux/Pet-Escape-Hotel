@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
     "art": "node scripts/render-art.mjs",
-    "check": "npm run lint && npm run typecheck"
+    "check": "npm run lint && npm run typecheck && npm test",
+    "test": "vitest run",
+    "audit": "tsx scripts/audit.ts"
   },
   "dependencies": {
     "@fontsource/fredoka": "^5.3.0",
@@ -29,8 +31,10 @@
     "@types/three": "^0.187.0",
     "eslint": "^9.39.5",
     "globals": "^17.14.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.9",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }
