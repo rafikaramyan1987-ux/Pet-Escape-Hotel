@@ -18,8 +18,8 @@ if (process.argv[2] === 'seg') {
   rmSync(frames, { recursive: true, force: true });
   mkdirSync(frames, { recursive: true });
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  // deviceScaleFactor 2: a sharp video of a real 390x844 phone viewport
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  // deviceScaleFactor 1.5: a sharp video of a real 390x844 phone viewport (585x1266 px)
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true });
   page.on('pageerror', (e) => console.error('pageerror', e.message));
   await page.goto(`http://localhost:${PORT}/?capture=1&q=low&level=${from}&auto=1`);
   await page.waitForFunction(() => window.__game, null, { timeout: 120000 });
@@ -48,7 +48,7 @@ if (process.argv[2] === 'seg') {
   }
   await browser.close();
   server.kill();
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', `${frames}/f%05d.png`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-preset', 'slow', '-movflags', '+faststart', out]);
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', `${frames}/f%05d.png`, '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-preset', 'slow', '-movflags', '+faststart', out]);
   rmSync(frames, { recursive: true, force: true });
   console.log(out, f, 'frames');
 } else {

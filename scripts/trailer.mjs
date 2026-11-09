@@ -1,4 +1,5 @@
-// Trailer from real gameplay (the solver bot plays, frame-stepped so nothing is dropped).
+// Trailer from real gameplay (the solver bot plays, frame-stepped so nothing is dropped): a tense moment with a
+// nearly full tray and a bomb, new mechanics, and a rescue.
 //   node scripts/trailer.mjs landscape   → submission/trailer-1920x1080.mp4
 //   node scripts/trailer.mjs portrait    → submission/trailer-1080x1620.mp4
 // Captured at 2/3 size and upscaled with lanczos (SwiftShader is slow); max 20 s.
@@ -16,10 +17,14 @@ const frames = `docs/art/.frames-${kind}`;
 const PORT = Number(process.env.ART_PORT ?? 4190 + (kind === 'portrait' ? 1 : 0));
 // [level, seconds to skip (not captured), seconds captured, bot delay]
 const SEGMENTS = [
-  [6, 0.6, 3.6, 0.42],
-  [24, 1.0, 3.6, 0.36],
-  [40, 4.0, 3.2, 0.36],
-  [8, 2.2, 8.8, 0.4],
+  // tension: the bomb counts down 3-2-1 while the tray fills to 4 of 5, then the plank drops just in time
+  [64, 3.5, 5.6, 0.6],
+  // ice: first tap cracks it, second takes the screw
+  [8, 0.2, 3.0, 0.6],
+  // boss with lock and key, the tray completely full for a moment
+  [30, 2.1, 3.6, 0.5],
+  // a rescue and the result card
+  [6, 2.4, 6.6, 0.5],
 ];
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 for (let i = 0; i < 60; i++) { try { await fetch(`http://localhost:${PORT}/`); break; } catch { await new Promise((r) => setTimeout(r, 500)); } }
