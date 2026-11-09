@@ -33,7 +33,7 @@ test('level 1 by real taps on the screws: tutorial, rescue, next level', async (
 });
 
 test('the solver bot clears levels 1-5 in the real game', async ({ page }) => {
-  await page.goto('/?q=low&level=1&auto=1');
+  await page.goto('/?q=low&level=1&auto=1&speed=3');
   await page.waitForFunction(() => window.__game?.state().level === 5 && window.__game.state().mode === 'won', null, { timeout: 200_000 });
   expect((await page.evaluate(() => window.__game!.state())).tray).toBe(0);
 });

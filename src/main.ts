@@ -46,6 +46,7 @@ async function boot(): Promise<void> {
   const game = new Game(document.getElementById('view') as HTMLCanvasElement, document.getElementById('ui')!, save, platform, audio, {
     quality: params.get('q') === 'low' || (mobile && params.get('q') !== 'high') ? 'low' : 'high',
     manual: capture,
+    speed: tooling ? Number(params.get('speed') ?? 1) : 1,
   });
   document.getElementById('boot')?.remove();
   platform.loadingStop();

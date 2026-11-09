@@ -58,7 +58,7 @@ export class Game {
   /** Hint screw currently shown (-1 none). */
   hintTarget = -1;
 
-  constructor(readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement, readonly save: SaveData, readonly platform: Platform, readonly audio: Audio, readonly opts: { quality: 'high' | 'low'; manual: boolean }) {
+  constructor(readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement, readonly save: SaveData, readonly platform: Platform, readonly audio: Audio, readonly opts: { quality: 'high' | 'low'; manual: boolean; speed?: number }) {
     const first = new PuzzleView(new Puzzle(LEVELS[0]), save.looks.dog, opts.quality);
     this.pipe = new Pipeline(canvas, first.scene, first.camera, { ao: opts.quality === 'high', bloom: true, pixelRatio: Math.min(window.devicePixelRatio, opts.quality === 'high' ? 2 : 1.5) });
     this.pipe.setBloom(0.35, 0.5, 1.1);
@@ -370,7 +370,9 @@ export class Game {
     const now = performance.now();
     const dt = (now - this.last) / 1000;
     this.last = now;
-    if (!this.opts.manual) this.advance(dt);
+    // tooling (`?speed=3`, e2e): several game steps per rendered frame, so slow software rendering can't stretch a test
+    const n = Math.max(1, Math.min(8, Math.round(this.opts.speed ?? 1)));
+    if (!this.opts.manual) for (let i = 0; i < n; i++) this.advance(dt, i === n - 1);
     requestAnimationFrame(this.loop);
   };
 
