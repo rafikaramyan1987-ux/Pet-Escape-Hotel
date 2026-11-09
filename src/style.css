@@ -476,3 +476,19 @@ body { background: #f7c2a8; }
   .boosters { left: auto; right: calc(var(--u) * 20); translate: none; }
   .hintbtn { bottom: calc(var(--u) * 24); right: calc(var(--u) * 300); }
 }
+
+/* ── difficulty rework: mechanic tips, fail card ── */
+.dialog.mtip { padding-top: calc(var(--u) * 30); position: relative; justify-items: center; }
+.dialog.mtip .ribbon {
+  position: absolute; top: calc(var(--u) * -18); left: 50%; translate: -50% 0; padding: calc(var(--u) * 4) calc(var(--u) * 22);
+  background: linear-gradient(180deg, #7bdc8f, #3fae5f); color: #fff; border: calc(var(--u) * 3.5) solid var(--ink); border-radius: calc(var(--u) * 14);
+  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 22); -webkit-text-stroke: calc(var(--u) * 1) var(--ink);
+}
+.mtip-img { width: calc(var(--u) * 96); height: calc(var(--u) * 96); object-fit: contain; filter: drop-shadow(0 calc(var(--u) * 4) 0 rgba(59, 35, 70, 0.35)); }
+.dialog .continues { gap: calc(var(--u) * 8); }
+.dialog .continues .big { font-size: calc(var(--u) * 18); min-height: calc(var(--u) * 64); padding: calc(var(--u) * 6) calc(var(--u) * 8); }
+.dialog .continues .big small svg { width: calc(var(--u) * 14); height: calc(var(--u) * 14); display: inline-block; vertical-align: -2px; }
+.tutorial-text { max-width: calc(100% - var(--u) * 20); text-align: center; white-space: normal; line-height: 1.15; }
+/* the tip sits above the booster bar (levels 3+) and below the board */
+.hud .tutorial-text { bottom: calc(var(--u) * 116); font-size: calc(var(--u) * 16); }
+@media (orientation: landscape) { .hud .tutorial-text { bottom: calc(var(--u) * 20); left: calc(var(--u) * 20); translate: none; max-width: calc(var(--u) * 340); } }

@@ -6,6 +6,9 @@ import { allPets, KINDS } from '../game/collection';
 import { SHOP, type Slot } from '../game/shop';
 import { ICON } from './icons';
 import { renderPetPortraits } from './portraits';
+import type { Mechanic } from '../puzzle/mechanics';
+import type { LoseReason } from '../puzzle/model';
+import { drawBomb, hiddenTexture, iceTexture, lockTexture } from '../puzzle/look';
 import { TryOn } from './tryon';
 
 const HAND = `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M26 6c3 0 5 2 5 5v18l3-1c3-1 5 0 6 2l2-1c3-1 5 0 6 2 3-1 6 1 6 4v12c0 9-7 15-15 15h-4c-6 0-10-3-13-8l-9-14c-2-3 1-6 4-5l4 3V11c0-3 2-5 5-5z" fill="#fff4dc" stroke="#3b2346" stroke-width="4" stroke-linejoin="round"/></svg>`;
@@ -47,7 +50,7 @@ export class Hud {
           </div>
           <div class="top-right">${this.coins()}<button class="round" data-act="sound" aria-label="${t('sound')}" data-testid="sound">${this.g.save.settings.sound ? ICON.paw : ICON.pause}</button></div>
         </div>
-        ${tutorial ? `<div class="tutorial-text card pill" data-testid="tutorial">${n === 1 ? t('tapHint') : t('tapHint2')}</div>` : ''}
+        ${n <= 5 ? `<div class="tutorial-text card pill" data-testid="tip">${t(`tip${n}` as 'tip1')}</div>` : ''}
         <button class="round hintbtn" data-act="hint" aria-label="${t('hint')}" data-testid="hint" hidden>${ICON.bulb}</button>
         <div class="boosters" data-boosters ${n <= 2 ? 'hidden' : ''}>
           ${BOOSTERS.map((b) => `<button class="booster" data-booster="${b.id}" data-testid="booster-${b.id}" aria-label="${t(b.label)}">${b.icon}<span class="lbl">${t(b.label)}</span><span class="cost"></span></button>`).join('')}
@@ -137,11 +140,9 @@ export class Hud {
     const hb = this.root.querySelector<HTMLElement>('[data-act=hint]');
     if (hb) hb.hidden = !g.hintAvailable;
     // the hand: the whole first level, the first two taps of the second, and on a hint
-    const tut = this.hand && g.mode === 'play' && (g.index === 0 || g.tapsDone < 2);
-    if (this.hand && !tut) {
-      this.root.querySelector('.tutorial-text')?.remove();
-      if (g.hintTarget < 0) this.hand.style.display = 'none';
-    }
+    // the tutorial hand: level 1 only
+    const tut = this.hand && g.mode === 'play' && g.def.tutorial === true && g.hintTarget < 0;
+    if (this.hand && !tut && g.hintTarget < 0) this.hand.style.display = 'none';
     if (!tut && g.hintTarget >= 0 && g.mode === 'play') {
       if (!this.hand) {
         this.hand = document.createElement('div');
@@ -244,18 +245,58 @@ export class Hud {
     }
   }
 
-  lost(): void {
+  /** Fail card: Retry (instant), +1 slot or undo the last 3 taps (one continue per level). */
+  lost(reason: LoseReason): void {
     const g = this.g;
-    const stock = g.save.boosters.slot;
-    const price = BOOSTER_PRICE.slot;
-    const cost = stock > 0 ? `<small>×${stock}</small>` : g.save.coins >= price ? `<small>${ICON.coin} ${price}</small>` : `<small>${t('watchAd')}</small>`;
+    const cost = (b: Booster) => {
+      const stock = g.save.boosters[b];
+      return stock > 0 ? `<small>×${stock}</small>` : g.save.coins >= BOOSTER_PRICE[b] ? `<small>${ICON.coin} ${BOOSTER_PRICE[b]}</small>` : `<small>${ICON.ad} ${t('watchAd')}</small>`;
+    };
+    const title = reason === 'bomb' ? t('boomTitle') : reason === 'stuck' ? t('stuckTitle') : t('trayFull');
+    const text = reason === 'bomb' ? t('boomText') : reason === 'stuck' ? t('stuckText') : t('failText');
+    const slot = g.canContinue('slot');
+    const undo = g.canContinue('undo');
     this.overlay(`<div class="card dialog caught" data-testid="lost">
-      <h2>${t('failTitle')}</h2><p>${t('failText')}</p>
-      ${g.canContinue() ? `<button class="big" data-act="continue" data-testid="continue">${ICON.slot}<span>${t('continueSlot')}</span>${cost}</button>` : ''}
+      <h2 data-testid="lost-title">${title}</h2><p>${text}</p>
       <button class="big primary" data-act="retry" data-testid="retry">${ICON.restart}<span>${t('retry')}</span></button>
+      ${slot || undo ? `<div class="row continues">
+        ${slot ? `<button class="big" data-act="slot" data-testid="continue">${ICON.slot}<span>${t('plusSlot')}</span>${cost('slot')}</button>` : ''}
+        ${undo ? `<button class="big" data-act="undo" data-testid="undo3">${ICON.undo}<span>${t('undo3')}</span>${cost('undo')}</button>` : ''}
+      </div><p class="small">${t('oneContinue')}</p>` : ''}
     </div>`, 'red');
     this.on('[data-act=retry]', () => g.retry());
-    this.on('[data-act=continue]', () => void g.continueLevel());
+    this.on('[data-act=slot]', () => void g.continueLevel('slot'));
+    this.on('[data-act=undo]', () => void g.continueLevel('undo'));
+  }
+
+  /** One-screen tip for a new mechanic (on its first level). */
+  mechanicTip(m: Mechanic): void {
+    const g = this.g;
+    g.setPaused(true);
+    const img = (c: HTMLCanvasElement | { toDataURL(): string }) => `<img class="mtip-img" alt="" src="${c.toDataURL()}"/>`;
+    const bomb = document.createElement('canvas');
+    bomb.width = bomb.height = 128;
+    drawBomb(bomb, 9, false);
+    const icon: Record<Mechanic, string> = {
+      ice: img(iceTexture().image as HTMLCanvasElement),
+      hidden: img(hiddenTexture().image as HTMLCanvasElement),
+      chain: `<svg class="mtip-img" viewBox="0 0 64 64"><g fill="none" stroke="#9aa0ae" stroke-width="7"><rect x="4" y="22" width="22" height="20" rx="10"/><rect x="21" y="22" width="22" height="20" rx="10" stroke="#c9ced8"/><rect x="38" y="22" width="22" height="20" rx="10"/></g></svg>`,
+      lock: img(lockTexture(0, 'lock').image as HTMLCanvasElement),
+      bomb: img(bomb),
+      sticky: `<svg class="mtip-img" viewBox="0 0 64 64"><circle cx="32" cy="32" r="22" fill="#7a2c2e" stroke="#f0464b" stroke-width="9"/><circle cx="32" cy="32" r="8" fill="#fff"/></svg>`,
+    };
+    const key = { ice: 'Ice', hidden: 'Hidden', chain: 'Chain', lock: 'Lock', bomb: 'Bomb', sticky: 'Sticky' }[m];
+    const d = this.overlay(`<div class="card dialog mtip" data-testid="mechanic-tip">
+      <div class="ribbon small">${t('newMechanic')}</div>
+      ${icon[m]}
+      <h2>${t(`m${key}Title` as 'mIceTitle')}</h2>
+      <p>${t(`m${key}Text` as 'mIceText')}</p>
+      <button class="big primary" data-act="gotit" data-testid="gotit">${ICON.play}<span>${t('gotIt')}</span></button>
+    </div>`, 'menu');
+    this.on('[data-act=gotit]', () => {
+      this.closeOverlay();
+      g.setPaused(false);
+    }, d);
   }
 
   moreSoon(): void {

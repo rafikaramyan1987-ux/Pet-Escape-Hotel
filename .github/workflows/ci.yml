@@ -26,7 +26,7 @@ jobs:
       - run: npm run typecheck
       - name: Unit tests (puzzle rules, solver, levels, ads settle-once, saves, i18n)
         run: npm test
-      - name: Level audit + playtest bot (every level solvable, levels 1-10 cannot fail, tray margin ≥ 1, time limit per level)
+      - name: Level audit (solvable, margin ≤ 1, random-tap fail rate in each stage band, playtest bot, time limit per level)
         run: npm run audit
       - name: Build (web / GitHub Pages)
         run: npm run build

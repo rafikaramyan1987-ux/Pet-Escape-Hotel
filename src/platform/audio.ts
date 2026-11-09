@@ -2,7 +2,8 @@
 export type Sfx =
   | 'step' | 'run' | 'dig' | 'jump' | 'pipe' | 'bone' | 'key' | 'gate' | 'suspicious' | 'alert' | 'caught' | 'win'
   | 'click' | 'coin' | 'wake' | 'locked' | 'switch' | 'squeak'
-  | 'unscrew' | 'land' | 'tray' | 'close' | 'plank' | 'thud' | 'rescue' | 'pop' | 'fail';
+  | 'unscrew' | 'land' | 'tray' | 'close' | 'plank' | 'thud' | 'rescue' | 'pop' | 'fail'
+  | 'ice' | 'unlock' | 'tick' | 'boom' | 'warn';
 
 export class Audio {
   private ctx: AudioContext | null = null;
@@ -135,6 +136,11 @@ export class Audio {
       case 'rescue': [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.14, i * 0.08)); break;
       case 'pop': this.tone(700, 0.12, 'sine', 0.15, 0, 500); break;
       case 'fail': [392, 330, 262].forEach((f, i) => this.tone(f, 0.25, 'triangle', 0.14, i * 0.13)); break;
+      case 'ice': this.noise(0.12, 0.25, 4200); [2637, 3136, 2349].forEach((f, i) => this.tone(f, 0.08, 'sine', 0.07, i * 0.04)); break;
+      case 'unlock': this.tone(660, 0.08, 'square', 0.06); this.tone(990, 0.14, 'triangle', 0.1, 0.07); break;
+      case 'tick': this.tone(1800, 0.03, 'square', 0.05); break;
+      case 'boom': this.noise(0.6, 0.5, 180); this.tone(70, 0.5, 'sine', 0.3, 0, -40); break;
+      case 'warn': this.tone(880, 0.1, 'square', 0.06); this.tone(880, 0.1, 'square', 0.06, 0.16); break;
       case 'switch': this.tone(880, 0.08, 'sine', 0.1); this.tone(1320, 0.1, 'sine', 0.08, 0.05); break;
     }
   }
