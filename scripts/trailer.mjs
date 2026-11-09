@@ -16,10 +16,10 @@ const frames = `docs/art/.frames-${kind}`;
 const PORT = Number(process.env.ART_PORT ?? 4190 + (kind === 'portrait' ? 1 : 0));
 // [level, seconds to skip (not captured), seconds captured, bot delay]
 const SEGMENTS = [
-  [6, 0.6, 4.2, 0.42],
-  [24, 1.0, 4.0, 0.36],
-  [40, 4.0, 3.6, 0.36],
-  [8, 2.2, 7.6, 0.4],
+  [6, 0.6, 3.6, 0.42],
+  [24, 1.0, 3.6, 0.36],
+  [40, 4.0, 3.2, 0.36],
+  [8, 2.2, 8.8, 0.4],
 ];
 const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 for (let i = 0; i < 60; i++) { try { await fetch(`http://localhost:${PORT}/`); break; } catch { await new Promise((r) => setTimeout(r, 500)); } }
@@ -28,7 +28,7 @@ mkdirSync(frames, { recursive: true });
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: CW, height: CH }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.error('pageerror', e.message));
-await page.goto(`http://localhost:${PORT}/?capture=1&q=high&level=1`);
+await page.goto(`http://localhost:${PORT}/?capture=1&q=${process.env.Q ?? 'low'}&level=1`);
 await page.waitForFunction(() => window.__game, null, { timeout: 120000 });
 let f = 0;
 for (const [level, skip, secs, delay] of SEGMENTS) {
@@ -36,6 +36,7 @@ for (const [level, skip, secs, delay] of SEGMENTS) {
     window.__game.start(l, true);
     window.__game.game.botDelay = d;
     window.__game.game.botWait = 0.3;
+    window.__game.game.autoAdvance = false;
   }, [level, delay]);
   if (skip > 0) await page.evaluate((n) => window.__game.step(1 / 30, n), Math.round(skip * FPS));
   const n = Math.round(secs * FPS);

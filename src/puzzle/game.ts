@@ -45,6 +45,8 @@ export class Game {
   /** Autoplay bot: seconds between taps (recordings speed it up). */
   botDelay = 1.0;
   botWait = 0.9;
+  /** Autoplay presses "Next" by itself (off for trailers, which end on the result card). */
+  autoAdvance = true;
   private resultShown = false;
   private last = performance.now();
   private taps = 0;
@@ -355,7 +357,7 @@ export class Game {
       this.autoNext = 1.6;
     }
     // the bot (recordings, e2e) presses "Next" by itself
-    if (this.autoplay && this.resultShown && this.mode === 'won' && this.autoNext > 0) {
+    if (this.autoplay && this.autoAdvance && this.resultShown && this.mode === 'won' && this.autoNext > 0) {
       this.autoNext -= dt;
       if (this.autoNext <= 0 && this.index + 1 < LEVELS.length) this.start(this.index + 1);
     }

@@ -916,13 +916,17 @@ export class PuzzleView {
   coverExtras(): void {
     this.trayG.visible = false;
     this.queueG.visible = false;
+    // portrait / square covers: the logo takes the top, so the toolboxes stay out of the shot
+    if ((this.layoutAspect || 1) <= 1.3) for (const b of this.boxes) b.g.visible = false;
     const others = (['dog', 'cat', 'hamster'] as const).filter((k) => k !== this.puzzle.def.pet);
     others.forEach((k, i) => {
       const a = makePet(k);
       characterLook(a.root, 0xffffff, 0.35, true);
-      a.root.scale.setScalar(k === 'hamster' ? 1.75 : 1.3);
+      // landscape: beside the object; portrait / square covers: tucked in front of its corners
+      const wide = (this.layoutAspect || 1) > 1.3;
+      a.root.scale.setScalar((k === 'hamster' ? 1.75 : 1.3) * (wide ? 1 : 0.9));
       const sx = i === 0 ? -1 : 1;
-      a.root.position.set(sx * 2.7, FLOOR_Y + 0.04, 1.9);
+      a.root.position.set(sx * (wide ? 2.7 : 1.45), FLOOR_Y + 0.04, wide ? 1.9 : 2.15);
       a.root.rotation.y = -sx * 0.45;
       this.scene.add(a.root);
       this.extras.push(a);

@@ -406,9 +406,9 @@ button { font-family: inherit; cursor: pointer; }
 .logo.cover .l2 { font-size: calc(var(--u) * 104); letter-spacing: 0.08em; padding-left: 0.08em; }
 .logo.cover .l2 .fg { background-image: linear-gradient(180deg, #ffffff 0%, #ffd1e1 50%, #ff6fb5 51%, #e0386e 100%); }
 .logo.cover .bolt { position: absolute; right: calc(var(--u) * -60); top: calc(var(--u) * -30); width: calc(var(--u) * 70); height: calc(var(--u) * 70); color: #ffc928; transform: rotate(18deg); filter: drop-shadow(0 0 calc(var(--u) * 10) rgba(255, 220, 120, 0.8)); }
-.logo.cover.portrait, .logo.cover.square { top: auto; bottom: 4%; left: 0; right: 0; margin: 0 auto; translate: none; transform-origin: 50% 100%; }
-.logo.cover.portrait { transform: rotate(-3deg) scale(0.62); }
-.logo.cover.square { transform: rotate(-3deg) scale(0.74); }
+.logo.cover.portrait { top: 7%; bottom: auto; left: 0; right: 0; margin: 0 auto; translate: none; transform-origin: 50% 0; transform: rotate(-3deg) scale(0.66); width: max-content; }
+/* square: top-right, so CrazyGames' top-left corner badge never covers it */
+.logo.cover.square { top: 7%; bottom: auto; left: auto; right: 10%; translate: none; transform-origin: 100% 0; transform: rotate(-3deg) scale(0.74); }
 .logo.cover.landscape { top: 6%; left: auto; right: 5%; translate: none; }
 body { background: #f7c2a8; }
 .boot { background: #ffd8bd; color: #3b2346; }

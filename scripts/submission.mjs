@@ -17,9 +17,9 @@ if (what === 'zip') {
   rmSync('build-zip', { recursive: true, force: true });
 }
 if (what === 'covers') {
-  // landscape: the approved title cover; portrait and square are rendered from the same scene (level 1 crate + logo)
+  // landscape: the approved title cover; portrait and square are rendered from the same scene (level 4 cage + logo, like the approved one)
   copyFileSync('docs/art/title-cover-1920x1080.png', 'submission/cover-1920x1080.png');
-  const shoot = (w, h, cover) => execFileSync('node', ['scripts/shoot.mjs', '1', '0.6', String(w), String(h), `submission/cover-${w}x${h}.png`, cover, '0'], { stdio: 'inherit' });
+  const shoot = (w, h, cover) => execFileSync('node', ['scripts/shoot.mjs', '4', '2.6', String(w), String(h), `submission/cover-${w}x${h}.png`, cover, '1'], { stdio: 'inherit' });
   shoot(800, 1200, 'portrait');
   shoot(800, 800, 'square');
 }
