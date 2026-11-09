@@ -24,9 +24,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - name: Unit tests (sim rules, 40 rooms, ads settle-once, saves, i18n)
+      - name: Unit tests (puzzle rules, solver, levels, ads settle-once, saves, i18n)
         run: npm test
-      - name: Playtest audit (bot solves all 40 rooms, no camping guards, no early sightings, win rates)
+      - name: Level audit + playtest bot (every level solvable, levels 1-10 cannot fail, tray margin ≥ 1, time limit per level)
         run: npm run audit
       - name: Build (web / GitHub Pages)
         run: npm run build
@@ -59,15 +59,17 @@ jobs:
       - name: Upload CrazyGames build (download = ready-to-upload zip)
         uses: actions/upload-artifact@v7
         with:
-          name: pet-escape-hotel-crazygames
+          name: screw-and-rescue-crazygames
           path: dist-crazygames/
           if-no-files-found: error
-      - name: Committed submission zip is the CrazyGames build in pet-escape-hotel-v1/
+      - name: Committed submission zip is the CrazyGames build in screw-and-rescue-v1/
         run: |
-          test -f submission/pet-escape-hotel-v1.zip
-          test "$(unzip -Z1 submission/pet-escape-hotel-v1.zip | grep -v '/$')" = "pet-escape-hotel-v1/index.html"
-          unzip -p submission/pet-escape-hotel-v1.zip pet-escape-hotel-v1/index.html | grep -q 'sdk.crazygames.com/crazygames-sdk-v3.js'
-          ! unzip -p submission/pet-escape-hotel-v1.zip pet-escape-hotel-v1/index.html | grep -qE 'src="\./assets|rel="manifest"'
+          test -f submission/screw-and-rescue-v1.zip
+          test "$(unzip -Z1 submission/screw-and-rescue-v1.zip | grep -v '/$')" = "screw-and-rescue-v1/index.html"
+          unzip -p submission/screw-and-rescue-v1.zip screw-and-rescue-v1/index.html | grep -q 'sdk.crazygames.com/crazygames-sdk-v3.js'
+          ! unzip -p submission/screw-and-rescue-v1.zip screw-and-rescue-v1/index.html | grep -qE 'src="\./assets|rel="manifest"'
+      - name: Submission folder (covers, trailers ≤ 20 s, README sections)
+        run: python3 scripts/check-submission.py
       # GitHub Pages only accepts deployments from the default branch (environment protection rules)
       - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)

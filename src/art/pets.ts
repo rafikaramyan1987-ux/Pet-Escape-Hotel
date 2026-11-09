@@ -326,7 +326,7 @@ export function makeHamster(fur3: Fur = [PAL.hamFur, 0xd97a2c, PAL.hamCream]): A
     body.add(pivot);
     ears.push(pivot);
   }
-  // little paws holding a sunflower seed
+  // little pink paws
   const hands = group();
   body.add(hands);
   for (const s of [-1, 1]) {
@@ -335,10 +335,6 @@ export function makeHamster(fur3: Fur = [PAL.hamFur, 0xd97a2c, PAL.hamCream]): A
     paw.scale.set(1, 0.8, 0.9);
     hands.add(paw);
   }
-  const seed = mesh(sph(0.05, 20, 12), paint(0x3a3232, 0.6, 0.1));
-  at(seed, 0, 0.2, 0.37, 0.3, 0, 0);
-  seed.scale.set(0.6, 1.25, 0.45);
-  hands.add(seed);
   for (const s of [-1, 1]) {
     const foot = mesh(sph(0.06), pink);
     at(foot, s * 0.14, 0.03, 0.2);

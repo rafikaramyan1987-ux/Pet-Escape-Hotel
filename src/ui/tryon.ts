@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { PetKind } from '../core/level';
+import type { PetKind } from '../art/pets';
 import { applyCosmetics, characterLook } from '../art/look';
 import { puck, paint } from '../art/kit';
 import { makePet, type Fur } from '../art/pets';

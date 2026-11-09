@@ -12,4 +12,5 @@ build-zip/
 submission/trailers/.frames-*/
 
 # the CrazyGames upload zip is a deliverable
-!submission/pet-escape-hotel-v1.zip
+!submission/screw-and-rescue-v1.zip
+docs/art/.frames/

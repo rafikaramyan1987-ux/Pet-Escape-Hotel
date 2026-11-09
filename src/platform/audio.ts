@@ -1,7 +1,8 @@
 /** Tiny WebAudio synth: every sound is generated (no audio files), plus a soft night-time lullaby loop. */
 export type Sfx =
   | 'step' | 'run' | 'dig' | 'jump' | 'pipe' | 'bone' | 'key' | 'gate' | 'suspicious' | 'alert' | 'caught' | 'win'
-  | 'click' | 'coin' | 'wake' | 'locked' | 'switch' | 'squeak';
+  | 'click' | 'coin' | 'wake' | 'locked' | 'switch' | 'squeak'
+  | 'unscrew' | 'land' | 'tray' | 'close' | 'plank' | 'thud' | 'rescue' | 'pop' | 'fail';
 
 export class Audio {
   private ctx: AudioContext | null = null;
@@ -121,6 +122,19 @@ export class Audio {
       case 'coin': this.tone(1568, 0.08, 'square', 0.06); this.tone(2093, 0.16, 'square', 0.06, 0.06); break;
       case 'wake': this.tone(220, 0.3, 'sawtooth', 0.06, 0, 120); break;
       case 'locked': this.tone(200, 0.12, 'square', 0.08); this.tone(160, 0.16, 'square', 0.08, 0.1); break;
+      case 'unscrew':
+        // quick ratchet clicks rising in pitch
+        for (let i = 0; i < 5; i++) this.tone(900 + i * 140, 0.035, 'square', 0.05, i * 0.045);
+        this.tone(520, 0.18, 'triangle', 0.1, 0.22, 700);
+        break;
+      case 'land': this.tone(1320, 0.07, 'triangle', 0.12); this.tone(1980, 0.09, 'sine', 0.08, 0.04); break;
+      case 'tray': this.tone(420, 0.1, 'triangle', 0.12); break;
+      case 'close': this.noise(0.08, 0.25, 700); this.tone(180, 0.15, 'sine', 0.18); [784, 1047].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.1, 0.08 + i * 0.07)); break;
+      case 'plank': this.tone(300, 0.2, 'triangle', 0.1, 0, -120); break;
+      case 'thud': this.noise(0.18, 0.35, 260); this.tone(110, 0.2, 'sine', 0.2); break;
+      case 'rescue': [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.14, i * 0.08)); break;
+      case 'pop': this.tone(700, 0.12, 'sine', 0.15, 0, 500); break;
+      case 'fail': [392, 330, 262].forEach((f, i) => this.tone(f, 0.25, 'triangle', 0.14, i * 0.13)); break;
       case 'switch': this.tone(880, 0.08, 'sine', 0.1); this.tone(1320, 0.1, 'sine', 0.08, 0.05); break;
     }
   }

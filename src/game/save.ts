@@ -1,4 +1,4 @@
-import type { PetKind } from '../core/level';
+import type { PetKind } from '../art/pets';
 
 /** Progress, wallet, cosmetics and settings. Stored through the platform (CrazyGames Data Module / localStorage). */
 export interface RoomRecord {
@@ -22,11 +22,18 @@ export interface SaveData {
   owned: string[];
   looks: Record<PetKind, Look>;
   daily: { last: string; streak: number };
-  settings: { lang: 'en' | 'fr' | ''; sound: boolean; music: boolean };
+  settings: { lang: 'en' | 'fr' | ''; sound: boolean; music: boolean; vibration: boolean };
   seenTips: number[];
+  /** Booster stock (bought with coins, or given by rewarded ads / the daily reward). */
+  boosters: Record<Booster, number>;
+  /** Freed pets ("dog:0" …), see collection.ts. */
+  pets: string[];
 }
 
-export const SAVE_KEY = 'pet-escape-hotel.save.v1';
+export type Booster = 'slot' | 'undo' | 'hammer';
+export const BOOSTER_PRICE: Record<Booster, number> = { slot: 60, undo: 30, hammer: 90 };
+
+export const SAVE_KEY = 'screw-and-rescue.save.v1';
 
 export function freshSave(): SaveData {
   const look: Look = { hat: 'none', collar: 'default', skin: 'default' };
@@ -39,8 +46,10 @@ export function freshSave(): SaveData {
     owned: ['none', 'default'],
     looks: { dog: { ...look }, cat: { ...look }, hamster: { ...look } },
     daily: { last: '', streak: 0 },
-    settings: { lang: '', sound: true, music: true },
+    settings: { lang: '', sound: true, music: true, vibration: true },
     seenTips: [],
+    boosters: { slot: 1, undo: 1, hammer: 1 },
+    pets: [],
   };
 }
 
@@ -56,6 +65,9 @@ export function parseSave(raw: string | null): SaveData {
       looks: { ...base.looks, ...(d.looks ?? {}) },
       daily: { ...base.daily, ...(d.daily ?? {}) },
       settings: { ...base.settings, ...(d.settings ?? {}) },
+      boosters: { ...base.boosters, ...(d.boosters ?? {}) },
+      pets: Array.isArray(d.pets) ? d.pets : [],
+      owned: Array.isArray(d.owned) ? d.owned : base.owned,
     };
   } catch {
     return base;
@@ -86,6 +98,14 @@ export function recordRoom(s: SaveData, id: string, stars: number, bones: number
   s.coins += coins;
   s.fails[id] = 0;
   return coins;
+}
+
+/** A finished level: best stars kept, the fail counter cleared. Coins are given by the caller. */
+export function recordLevel(s: SaveData, id: number, stars: number): void {
+  const k = String(id);
+  const prev = s.rooms[k];
+  s.rooms[k] = { stars: Math.max(stars, prev?.stars ?? 0), bones: 0, best: 0 };
+  s.fails[k] = 0;
 }
 
 export const DAILY_REWARDS = [20, 30, 40, 50, 60, 80, 120];
