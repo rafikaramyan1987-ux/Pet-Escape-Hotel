@@ -6,7 +6,8 @@ import { bossHat, petId, petOfLevel, type PetVariant } from '../game/collection'
 import { item } from '../game/shop';
 import { name, t } from '../game/i18n';
 import { LEVELS } from './levels';
-import { type Action, Puzzle } from './model';
+import { type Action, type LoseReason, Puzzle } from './model';
+import { MECHANIC_INTRO, type Mechanic } from './mechanics';
 import { hint } from './solver';
 import { PuzzleView } from './view';
 import { Hud } from '../ui/hud';
@@ -21,8 +22,10 @@ export function rewardFor(level: number, fails: number): number {
 
 /** Camera rotation is offered from this level on (never needed to solve a level). */
 export const ORBIT_FROM = 20;
-/** The hint bulb appears after this many fails on a level. */
-export const HINT_AFTER = 3;
+/** The hint bulb appears after this many fails on a level (never automatic). */
+export const HINT_AFTER = 2;
+/** Taps taken back by the "undo last 3" option on the fail card. */
+export const UNDO_ON_FAIL = 3;
 export const MAX_TRAY = 8;
 
 /**
@@ -57,6 +60,11 @@ export class Game {
   private drag: { x: number; o: number; id: number } | null = null;
   /** Hint screw currently shown (-1 none). */
   hintTarget = -1;
+  /** Why the level was lost. */
+  lostReason: LoseReason = 'tray';
+  /** One continue per attempt, and each booster once per attempt, so boosters never make a level trivial. */
+  continued = false;
+  usedBoosters = new Set<Booster>();
 
   constructor(readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement, readonly save: SaveData, readonly platform: Platform, readonly audio: Audio, readonly opts: { quality: 'high' | 'low'; manual: boolean; speed?: number }) {
     const first = new PuzzleView(new Puzzle(LEVELS[0]), save.looks.dog, opts.quality);
@@ -114,9 +122,18 @@ export class Game {
     this.hammerMode = false;
     this.hintTarget = -1;
     this.taps = 0;
+    this.continued = false;
+    this.usedBoosters.clear();
     this.fails = this.save.fails[String(def.id)] ?? 0;
     this.botWait = 1.2;
     this.hud.level(def.id, def.tutorial === true);
+    // a new mechanic gets a one-screen tip on its first level (once)
+    const intro = (Object.keys(MECHANIC_INTRO) as Mechanic[]).find((m) => MECHANIC_INTRO[m] === def.id);
+    if (intro && !this.save.seenTips.includes(def.id) && !this.autoplay && !this.opts.manual) {
+      this.save.seenTips.push(def.id);
+      this.persist();
+      this.hud.mechanicTip(intro);
+    }
     if (def.id === ORBIT_FROM && !this.save.seenTips.includes(ORBIT_FROM)) {
       this.save.seenTips.push(ORBIT_FROM);
       this.persist();
@@ -151,6 +168,12 @@ export class Game {
       this.tap(id);
       return;
     }
+    const locked = this.view.lockedAt(p.x, p.y, p.w, p.h);
+    if (locked >= 0) {
+      this.view.wiggleLock(locked);
+      this.hud.toast(t('lockedHint'), 1.8);
+      return;
+    }
     // from level 20 a drag on empty space turns the view a little (optional: every screw is reachable without it)
     if (this.def.id >= ORBIT_FROM) this.drag = { x: e.clientX, o: this.orbit, id: e.pointerId };
     else this.hud.ripple(e.clientX, e.clientY, false);
@@ -172,12 +195,17 @@ export class Game {
     this.hud.ripple(sc.x + r.left, sc.y + r.top, true);
     this.view.apply(ev);
     this.buzz(12);
-    this.afterMove(ev.map((x) => x.type));
+    this.afterMove(ev);
   }
 
-  private afterMove(types: string[]): void {
-    if (types.includes('won')) this.mode = 'won';
-    if (types.includes('lost')) this.mode = 'lost';
+  private afterMove(ev: ReturnType<Puzzle['tap']>): void {
+    for (const e of ev) {
+      if (e.type === 'won') this.mode = 'won';
+      if (e.type === 'lost') {
+        this.mode = 'lost';
+        this.lostReason = e.reason;
+      }
+    }
     this.hud.boosters();
   }
 
@@ -203,7 +231,7 @@ export class Game {
 
   // ─── boosters ────────────────────────────────────────────────────────────
   canUse(b: Booster): boolean {
-    if (this.mode !== 'play' || this.paused || this.autoplay) return false;
+    if (this.mode !== 'play' || this.paused || this.autoplay || this.usedBoosters.has(b)) return false;
     if (b === 'slot') return this.puzzle.tray.length < MAX_TRAY;
     if (b === 'undo') return this.puzzle.undoActions() !== null;
     return this.puzzle.plankGone.some((g) => !g);
@@ -246,6 +274,7 @@ export class Game {
       return;
     }
     if (!(await this.pay(b)) || !this.canUse(b)) return;
+    this.usedBoosters.add(b);
     this.audio.play('pop');
     if (b === 'slot') {
       this.view.apply(this.puzzle.addTraySlot());
@@ -264,19 +293,32 @@ export class Game {
       return;
     }
     const ev = this.puzzle.hammer(plank);
+    this.usedBoosters.add('hammer');
     this.view.apply(ev);
     this.buzz(30);
-    this.afterMove(ev.map((x) => x.type));
+    this.afterMove(ev);
   }
 
-  /** Lost: carry on with one more tray slot (the same moves, replayed with a bigger tray). */
-  canContinue(): boolean {
-    return this.mode === 'lost' && this.puzzle.tray.length < MAX_TRAY;
+  /**
+   * Fail card options (one continue per attempt): +1 tray slot (the same moves replayed with a bigger tray;
+   * only when the tray overflowed and no extra slot was used yet) or undo the last 3 taps.
+   */
+  canContinue(kind: 'slot' | 'undo'): boolean {
+    if (this.mode !== 'lost' || this.continued) return false;
+    if (kind === 'slot') {
+      if (this.lostReason !== 'tray' || this.usedBoosters.has('slot') || this.puzzle.tray.length >= MAX_TRAY) return false;
+      // only when one more slot really gets you going again (a stuck board stays stuck)
+      return Puzzle.replay(this.def, [{ t: 'slot' }, ...this.puzzle.history]).status === 'play';
+    }
+    const back = this.puzzle.undoActions(UNDO_ON_FAIL);
+    return back !== null && Puzzle.replay(this.def, back).status === 'play';
   }
 
-  async continueLevel(): Promise<void> {
-    if (!this.canContinue() || !(await this.pay('slot'))) return;
-    const actions: Action[] = [{ t: 'slot' }, ...this.puzzle.history];
+  async continueLevel(kind: 'slot' | 'undo'): Promise<void> {
+    if (!this.canContinue(kind) || !(await this.pay(kind))) return;
+    this.continued = true;
+    const actions: Action[] = kind === 'slot' ? [{ t: 'slot' }, ...this.puzzle.history] : this.puzzle.undoActions(UNDO_ON_FAIL)!;
+    if (kind === 'slot') this.usedBoosters.add('slot');
     this.puzzle = Puzzle.replay(this.def, actions);
     this.mount();
     this.mode = this.puzzle.status === 'won' ? 'won' : 'play';
@@ -336,14 +378,14 @@ export class Game {
       this.persist();
       this.audio.play('fail');
       this.buzz(60);
-      this.hud.lost();
+      this.hud.lost(this.lostReason);
     }
   }
 
   advance(dt: number, render = true): void {
     dt = Math.min(dt, 0.1);
     this.view.update(dt);
-    if (this.mode === 'play' && this.autoplay) {
+    if (this.mode === 'play' && this.autoplay && !this.paused) {
       this.botWait -= dt;
       if (this.botWait <= 0 && !this.view.busy()) this.botWait = 0;
       if (this.botWait <= 0) {

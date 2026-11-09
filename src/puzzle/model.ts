@@ -10,6 +10,14 @@ import type { PetKind } from '../art/pets';
  * when no plank on a higher layer covers it. Run out of tray space: level failed. All planks gone: the pet
  * inside is rescued.
  *
+ * Mechanics mixed in as levels progress:
+ *  - ice: the first tap breaks the ice, the second unscrews
+ *  - hidden "?": the colour shows only once the screw is free (no plank above it)
+ *  - chained planks: they fall together, only when every plank of the chain has lost its screws
+ *  - lock / key: a locked screw can be taken only after the key screw with the same symbol is out
+ *  - bomb plank: a counter of N taps; if it runs out before the plank falls, the level is lost
+ *  - sticky tray slot: one slot that only accepts one colour
+ *
  * Coordinates: the front plane of the object, x right, y up, in world units (the opening is ~3.4 × 2.8).
  */
 export const COLORS = ['red', 'blue', 'yellow', 'green', 'purple', 'orange', 'pink', 'teal'] as const;
@@ -19,6 +27,16 @@ export type ObjectKind = 'crate' | 'cage' | 'kennel' | 'carrier' | 'toybox';
 export const BOX_SIZE = 3;
 export const SCREW_R = 0.26;
 export const PLANK_W = 0.72;
+
+/** Per-screw modifiers (aligned with PlankSpec.screws). */
+export interface ScrewMod {
+  ice?: 1;
+  hidden?: 1;
+  /** Locked until the key screw with the same symbol (0–3) is out. */
+  lock?: number;
+  /** This screw is the key for symbol n. */
+  key?: number;
+}
 
 export interface PlankSpec {
   x: number;
@@ -31,6 +49,11 @@ export interface PlankSpec {
   screws: Color[];
   /** Pastel paint index (cosmetic). */
   tint?: number;
+  mods?: (ScrewMod | null)[];
+  /** Planks with the same chain id fall together. */
+  chain?: number;
+  /** Bomb plank: taps allowed before it must have fallen. */
+  bomb?: number;
 }
 
 export interface LevelDef {
@@ -44,8 +67,12 @@ export interface LevelDef {
   open: number;
   /** Holding tray slots. */
   tray: number;
+  /** One tray slot that only accepts one colour. */
+  sticky?: { slot: number; color: Color };
   tutorial?: boolean;
 }
+
+export type LoseReason = 'tray' | 'bomb' | 'stuck';
 
 export type Action = { t: 'tap'; id: number } | { t: 'slot' } | { t: 'hammer'; plank: number };
 
@@ -56,6 +83,10 @@ export interface Screw {
   x: number;
   y: number;
   layer: number;
+  ice: boolean;
+  hidden: boolean;
+  lock: number;
+  key: number;
 }
 
 export interface Plank {
@@ -81,8 +112,11 @@ export type PuzzleEvent =
   | { type: 'hammer'; plank: number; screws: number[] }
   | { type: 'ghostToBox'; color: Color; box: number; uid: number; slot: number }
   | { type: 'traySlot'; slots: number }
+  | { type: 'ice'; screw: number }
+  | { type: 'reveal'; screw: number }
+  | { type: 'unlock'; screw: number }
   | { type: 'won' }
-  | { type: 'lost' };
+  | { type: 'lost'; reason: LoseReason; plank?: number };
 
 /** Build planks and screws (positions) from a level definition. */
 export function buildLevel(def: LevelDef): { planks: Plank[]; screws: Screw[] } {
@@ -98,7 +132,11 @@ export function buildLevel(def: LevelDef): { planks: Plank[]; screws: Screw[] } 
     spec.screws.forEach((color, i) => {
       const t = n === 1 ? 0 : -spec.len / 2 + inset + ((spec.len - 2 * inset) * i) / (n - 1);
       const id = screws.length;
-      screws.push({ id, plank: pi, color, x: spec.x + ux * t, y: spec.y + uy * t, layer: spec.layer });
+      const m = spec.mods?.[i] ?? null;
+      screws.push({
+        id, plank: pi, color, x: spec.x + ux * t, y: spec.y + uy * t, layer: spec.layer,
+        ice: !!m?.ice, hidden: !!m?.hidden, lock: m?.lock ?? -1, key: m?.key ?? -1,
+      });
       ids.push(id);
     });
     planks.push({ id: pi, spec, screws: ids });
@@ -133,6 +171,18 @@ export class Puzzle {
   history: Action[] = [];
   /** Hammered screws not yet counted in a box (a box of that colour opens later). */
   credit: Partial<Record<Color, number>> = {};
+  /** Screws still under ice. */
+  iced: boolean[];
+  /** Taps so far (bomb counters run down with every tap). */
+  taps = 0;
+  /** Colour each tray slot accepts (null = any). */
+  trayColor: (Color | null)[];
+  /** For each locked screw: its key screw. */
+  private keyOf: number[];
+  private hasIce: boolean;
+  private hasBomb: boolean;
+  /** Hidden and locked screws (watched for reveal / unlock events). */
+  private watch: number[];
 
   constructor(def: LevelDef) {
     this.def = def;
@@ -143,6 +193,12 @@ export class Puzzle {
     this.removed = screws.map(() => false);
     this.plankGone = planks.map(() => false);
     this.tray = Array.from({ length: def.tray }, () => null);
+    this.trayColor = this.tray.map((_, i) => (def.sticky && def.sticky.slot === i ? def.sticky.color : null));
+    this.iced = screws.map((x) => x.ice);
+    this.keyOf = screws.map((x) => (x.lock >= 0 ? screws.findIndex((k) => k.key === x.lock) : -1));
+    this.hasIce = this.iced.some(Boolean);
+    this.hasBomb = def.planks.some((p) => p.bomb !== undefined);
+    this.watch = screws.filter((x) => x.hidden || x.lock >= 0).map((x) => x.id);
     this.boxes = [];
     this.next = 0;
     for (let i = 0; i < def.open; i++) this.boxes.push(this.nextBox());
@@ -162,12 +218,49 @@ export class Puzzle {
     c.tray = this.tray.slice();
     c.history = this.history.slice();
     c.credit = { ...this.credit };
+    c.iced = this.iced.slice();
+    c.trayColor = this.trayColor.slice();
     return c;
+  }
+
+  /** Not under a plank (its colour is visible even when it is hidden "?" and locked). */
+  isUncovered(id: number): boolean {
+    return this.coveredBy[id].every((p) => this.plankGone[p]);
+  }
+
+  isLocked(id: number): boolean {
+    const k = this.keyOf[id];
+    return k >= 0 && !this.removed[k];
   }
 
   isFree(id: number): boolean {
     if (this.removed[id]) return false;
-    return this.coveredBy[id].every((p) => this.plankGone[p]);
+    return this.isUncovered(id) && !this.isLocked(id);
+  }
+
+  /** Taps left on a bomb plank (Infinity when it is not a bomb or already fell). */
+  bombLeft(plank: number): number {
+    const b = this.planks[plank].spec.bomb;
+    if (b === undefined || this.plankGone[plank]) return Infinity;
+    return b - this.taps;
+  }
+
+  /** Tray slot a screw of this colour would go to (-1: none). Sticky slots take their colour first. */
+  slotFor(color: Color): number {
+    for (let i = 0; i < this.tray.length; i++) if (this.tray[i] === null && this.trayColor[i] === color) return i;
+    for (let i = 0; i < this.tray.length; i++) if (this.tray[i] === null && this.trayColor[i] === null) return i;
+    return -1;
+  }
+
+  private boxFor(color: Color): number {
+    return this.boxes.findIndex((b) => b && b.color === color && b.screws.length < BOX_SIZE);
+  }
+
+  /** Can this free screw be tapped without losing right away? */
+  canTakeSafely(id: number): boolean {
+    if (this.iced[id]) return true;
+    const c = this.screws[id].color;
+    return this.boxFor(c) >= 0 || this.slotFor(c) >= 0;
   }
 
   freeScrews(): number[] {
@@ -185,40 +278,77 @@ export class Puzzle {
     if (this.status !== 'play' || !this.isFree(id)) return [];
     const ev: PuzzleEvent[] = [];
     const s = this.screws[id];
-    this.removed[id] = true;
     this.history.push({ t: 'tap', id });
-    const bi = this.boxes.findIndex((b) => b && b.color === s.color && b.screws.length < BOX_SIZE);
+    this.taps++;
+    if (this.iced[id]) {
+      this.iced[id] = false;
+      ev.push({ type: 'ice', screw: id });
+      this.afterTap(ev);
+      return ev;
+    }
+    const wasFree = this.watch.map((k) => this.isFree(k));
+    this.removed[id] = true;
+    const bi = this.boxFor(s.color);
     if (bi >= 0) {
       const b = this.boxes[bi]!;
       b.screws.push(id);
       ev.push({ type: 'toBox', screw: id, box: bi, uid: b.uid, slot: b.screws.length - 1 });
       this.settleBoxes(ev);
     } else {
-      const slot = this.tray.indexOf(null);
+      const slot = this.slotFor(s.color);
       if (slot < 0) {
         // no room anywhere: the level is lost (the screw stays out, nowhere to go)
         this.status = 'lost';
-        ev.push({ type: 'lost' });
+        ev.push({ type: 'lost', reason: 'tray' });
         return ev;
       }
       this.tray[slot] = id;
       ev.push({ type: 'toTray', screw: id, slot });
     }
-    // plank falls when its last screw is out
-    const p = this.planks[s.plank];
-    if (!this.plankGone[p.id] && p.screws.every((k) => this.removed[k])) {
-      this.plankGone[p.id] = true;
-      ev.push({ type: 'plankFall', plank: p.id });
+    this.dropPlanks(s.plank, ev);
+    for (let w = 0; w < this.watch.length; w++) {
+      const k = this.watch[w];
+      if (wasFree[w] || !this.isFree(k)) continue;
+      if (this.screws[k].hidden) ev.push({ type: 'reveal', screw: k });
+      if (this.screws[k].lock >= 0 && this.keyOf[k] === id) ev.push({ type: 'unlock', screw: k });
     }
+    this.afterTap(ev);
+    return ev;
+  }
+
+  /** A plank falls when its screws are out, and a chained plank only together with the rest of its chain. */
+  private dropPlanks(plank: number, ev: PuzzleEvent[]): void {
+    const spec = this.planks[plank].spec;
+    const group = spec.chain === undefined ? [plank] : this.planks.filter((p) => p.spec.chain === spec.chain).map((p) => p.id);
+    const empty = (i: number) => this.plankGone[i] || this.planks[i].screws.every((k) => this.removed[k]);
+    if (!group.every(empty)) return;
+    for (const i of group) {
+      if (this.plankGone[i]) continue;
+      this.plankGone[i] = true;
+      ev.push({ type: 'plankFall', plank: i });
+    }
+  }
+
+  /** Win, bomb and stuck checks after every tap. */
+  private afterTap(ev: PuzzleEvent[]): void {
     if (this.plankGone.every(Boolean)) {
       this.status = 'won';
       ev.push({ type: 'won' });
-    } else if (this.trayCount() === this.tray.length && !this.freeScrews().some((k) => this.boxes.some((b) => b && b.color === this.screws[k].color))) {
-      // tray full and no free screw can go into an open box: stuck
-      this.status = 'lost';
-      ev.push({ type: 'lost' });
+      return;
     }
-    return ev;
+    for (const p of this.planks) {
+      if (this.bombLeft(p.id) <= 0) {
+        this.status = 'lost';
+        ev.push({ type: 'lost', reason: 'bomb', plank: p.id });
+        return;
+      }
+    }
+    const free = this.freeScrews();
+    if (!free.some((k) => this.canTakeSafely(k))) {
+      // nothing can be taken without overflowing the tray (or nothing is free at all): stuck
+      this.status = 'lost';
+      ev.push({ type: 'lost', reason: free.length ? 'tray' : 'stuck' });
+    }
   }
 
   /** Close full boxes, open the next ones, and pull matching screws from the tray. */
@@ -282,6 +412,8 @@ export class Puzzle {
     this.plankGone[plank] = true;
     this.settleBoxes(ev);
     ev.push({ type: 'plankFall', plank });
+    // a chained partner whose screws are already out comes down with it
+    for (const p of this.planks) if (!this.plankGone[p.id] && p.spec.chain !== undefined && p.spec.chain === this.planks[plank].spec.chain) this.dropPlanks(p.id, ev);
     if (this.plankGone.every(Boolean)) {
       this.status = 'won';
       ev.push({ type: 'won' });
@@ -300,11 +432,12 @@ export class Puzzle {
     return p;
   }
 
-  /** History without the last tap (boosters stay used). null when there is nothing to undo. */
-  undoActions(): Action[] | null {
-    const i = this.history.map((a) => a.t).lastIndexOf('tap');
-    if (i < 0) return null;
-    return this.history.slice(0, i).concat(this.history.slice(i + 1).filter((a) => a.t !== 'tap'));
+  /** History without the last `n` taps (boosters stay used). null when there is no tap to undo. */
+  undoActions(n = 1): Action[] | null {
+    const taps = this.history.map((a, i) => (a.t === 'tap' ? i : -1)).filter((i) => i >= 0);
+    if (!taps.length) return null;
+    const drop = new Set(taps.slice(-n));
+    return this.history.filter((_, i) => !drop.has(i));
   }
 
   /** Canonical key of the gameplay-relevant state (for the solver). */
@@ -313,8 +446,12 @@ export class Puzzle {
     for (const r of this.removed) k += r ? '1' : '0';
     k += `|${this.next}|`;
     for (const b of this.boxes) k += b ? `${b.color[0]}${b.color[1]}${b.screws.length},` : '-,';
-    const tray = this.tray.filter((t) => t !== null).map((t) => this.screws[t!].color).sort();
-    return k + tray.join('') + (this.tray.length !== this.def.tray ? `#${this.tray.length}` : '');
+    if (this.hasIce) for (const r of this.iced) k += r ? 'i' : '.';
+    const tray = this.tray.filter((t, i) => t !== null && this.trayColor[i] === null).map((t) => this.screws[t!].color).sort();
+    k += tray.join('');
+    if (this.def.sticky) k += `|${this.tray[this.def.sticky.slot] === null ? '' : 's'}`;
+    if (this.hasBomb) k += `|t${this.taps}`;
+    return k + (this.tray.length !== this.def.tray ? `#${this.tray.length}` : '');
   }
 }
 
@@ -331,6 +468,15 @@ export function validateLevel(def: LevelDef): string[] {
   }
   for (const c of boxes.keys()) if (!count.has(c)) problems.push(`box for ${c} with no ${c} screws`);
   if (!def.planks.length) problems.push('no planks');
-  for (const p of def.planks) if (!p.screws.length) problems.push('plank without screws');
+  for (const p of def.planks) {
+    if (!p.screws.length) problems.push('plank without screws');
+    if (p.mods && p.mods.length !== p.screws.length) problems.push('mods do not match the screws');
+  }
+  const mods = def.planks.flatMap((p) => p.mods ?? []);
+  for (const m of mods) if (m?.lock !== undefined && !mods.some((k) => k?.key === m.lock)) problems.push(`lock ${m.lock} without a key`);
+  const chains = new Map<number, number>();
+  for (const p of def.planks) if (p.chain !== undefined) chains.set(p.chain, (chains.get(p.chain) ?? 0) + 1);
+  for (const [c, n] of chains) if (n < 2) problems.push(`chain ${c} has one plank`);
+  if (def.sticky && (def.sticky.slot >= def.tray || !count.has(def.sticky.color))) problems.push('bad sticky slot');
   return problems;
 }

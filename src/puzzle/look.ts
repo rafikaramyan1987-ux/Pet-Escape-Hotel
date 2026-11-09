@@ -151,3 +151,139 @@ export function plankTexture(): THREE.CanvasTexture {
   woodTex.anisotropy = 8;
   return woodTex;
 }
+
+// ─── mechanic decals ─────────────────────────────────────────────────────
+const canvasTex = (S: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture => {
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  draw(c.getContext('2d')!);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+};
+const once = <T>(f: () => T): (() => T) => {
+  let v: T | undefined;
+  return () => (v ??= f());
+};
+
+/** Symbols that pair a lock with its key (gold, never a screw colour). */
+export const LOCK_SYMBOL: Symbol[] = ['star', 'heart', 'diamond', 'hex'];
+
+/** Hidden "?" screw head: grey until it is free. */
+export const hiddenTexture = once(() => canvasTex(256, (g) => {
+  const S = 256;
+  const grad = g.createRadialGradient(S * 0.4, S * 0.36, S * 0.05, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, '#d9d6e2');
+  grad.addColorStop(0.65, '#9d98ae');
+  grad.addColorStop(1, '#6c6880');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2);
+  g.fill();
+  g.font = `900 ${S * 0.62}px 'Lilita One', 'Fredoka', sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = S * 0.06;
+  g.strokeStyle = 'rgba(40,24,52,0.9)';
+  g.strokeText('?', S / 2, S * 0.54);
+  g.fillStyle = '#fff';
+  g.fillText('?', S / 2, S * 0.54);
+}));
+
+const lockCache = new Map<string, THREE.CanvasTexture>();
+/** Gold padlock (locked screw) or key tag (key screw) with the pair's symbol. */
+export function lockTexture(sym: number, kind: 'lock' | 'key'): THREE.CanvasTexture {
+  const k = `${kind}${sym}`;
+  const hit = lockCache.get(k);
+  if (hit) return hit;
+  const t = canvasTex(256, (g) => {
+    const S = 256;
+    g.lineJoin = 'round';
+    g.lineWidth = 14;
+    g.strokeStyle = '#3b2346';
+    g.fillStyle = '#ffc928';
+    if (kind === 'lock') {
+      g.beginPath();
+      g.arc(S / 2, S * 0.38, S * 0.2, Math.PI, 0);
+      g.lineWidth = 30;
+      g.stroke();
+      g.lineWidth = 16;
+      g.strokeStyle = '#ffc928';
+      g.stroke();
+      g.lineWidth = 14;
+      g.strokeStyle = '#3b2346';
+      g.beginPath();
+      g.roundRect(S * 0.2, S * 0.4, S * 0.6, S * 0.48, 26);
+      g.fill();
+      g.stroke();
+    } else {
+      g.beginPath();
+      g.arc(S * 0.5, S * 0.32, S * 0.24, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.beginPath();
+      g.roundRect(S * 0.43, S * 0.5, S * 0.14, S * 0.42, 8);
+      g.roundRect(S * 0.55, S * 0.72, S * 0.14, S * 0.08, 4);
+      g.roundRect(S * 0.55, S * 0.84, S * 0.12, S * 0.08, 4);
+      g.fill();
+      g.stroke();
+    }
+    g.fillStyle = '#3b2346';
+    const cy = kind === 'lock' ? S * 0.64 : S * 0.32;
+    drawSymbol(g, LOCK_SYMBOL[sym % LOCK_SYMBOL.length], S / 2, cy, S * 0.12);
+  });
+  lockCache.set(k, t);
+  return t;
+}
+
+/** Frosty ice cap over a screw head. */
+export const iceTexture = once(() => canvasTex(256, (g) => {
+  const S = 256;
+  const grad = g.createRadialGradient(S * 0.35, S * 0.3, S * 0.05, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.6, 'rgba(190,232,255,0.75)');
+  grad.addColorStop(1, 'rgba(120,190,240,0.85)');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.9)';
+  g.lineWidth = 6;
+  for (const [a, b, c, d] of [[0.25, 0.3, 0.45, 0.42], [0.62, 0.22, 0.55, 0.45], [0.3, 0.7, 0.48, 0.58], [0.7, 0.68, 0.56, 0.6]]) {
+    g.beginPath();
+    g.moveTo(S * a, S * b);
+    g.lineTo(S * c, S * d);
+    g.stroke();
+  }
+}));
+
+/** Bomb badge with the taps left (redrawn into the same canvas when the number changes). */
+export function drawBomb(c: HTMLCanvasElement, n: number, hot: boolean): void {
+  const S = c.width;
+  const g = c.getContext('2d')!;
+  g.clearRect(0, 0, S, S);
+  g.fillStyle = hot ? '#ff4b3e' : '#2e2a3d';
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = S * 0.06;
+  g.beginPath();
+  g.arc(S / 2, S * 0.55, S * 0.4, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  // fuse
+  g.strokeStyle = '#3b2346';
+  g.lineWidth = S * 0.07;
+  g.beginPath();
+  g.moveTo(S * 0.66, S * 0.2);
+  g.quadraticCurveTo(S * 0.78, S * 0.05, S * 0.9, S * 0.1);
+  g.stroke();
+  g.fillStyle = '#ffc928';
+  g.beginPath();
+  g.arc(S * 0.9, S * 0.1, S * 0.07, 0, Math.PI * 2);
+  g.fill();
+  g.font = `900 ${S * 0.42}px 'Lilita One', 'Fredoka', sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#ffffff';
+  g.fillText(String(Math.max(0, n)), S / 2, S * 0.58);
+}
