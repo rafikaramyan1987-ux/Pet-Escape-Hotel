@@ -1,6 +1,6 @@
 import './style.css';
 import { detectLang, setLang } from './game/i18n';
-import { parseSave, SAVE_KEY } from './game/save';
+import { dailyStatus, parseSave, SAVE_KEY } from './game/save';
 import { Audio } from './platform/audio';
 import { detectSdk, Platform } from './platform/sdk';
 import { Game } from './puzzle/game';
@@ -51,6 +51,8 @@ async function boot(): Promise<void> {
   platform.loadingStop();
   const lv = tooling ? Number(params.get('level') ?? 0) : 0;
   game.start(lv ? LEVELS.findIndex((l) => l.id === lv) : game.unlocked());
+  // returning players get the daily gift offered once per session (never during the first levels)
+  if (!capture && !lv && game.unlocked() >= 2 && dailyStatus(save, new Date()).available) game.hud.menu('daily');
   if (tooling) {
     game.autoplay = params.get('auto') === '1';
     if (params.has('cover')) {

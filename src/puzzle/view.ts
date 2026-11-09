@@ -535,6 +535,7 @@ export class PuzzleView {
       this.queueG.position.copy(this.ndcToWorld(0.36, 0.66, zPlane));
     }
     this.trayG.position.copy(this.trayAnchor);
+    this.trayG.rotation.order = 'YXZ';
     this.trayG.rotation.x = 0.35;
     this.queueG.scale.setScalar(this.boxScale * 0.8);
     for (const b of this.boxes) if (!b.leaving) this.placeBox(b, b.g.userData.offset ?? 0);
