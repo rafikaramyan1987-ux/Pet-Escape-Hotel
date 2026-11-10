@@ -78,63 +78,18 @@ test('boosters: undo, +1 slot and hammer', async ({ page }) => {
   expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.save.boosters)).toEqual({ slot: 0, undo: 0, hammer: 0 });
 });
 
-test('tray full: "watch an ad for +1 slot" once per level (only a completed ad rewards), retry, hint after 2 fails', async ({ page }) => {
-  // a stand-in ad SDK whose rewarded ads complete (the web build has none: there the button says no ad is available)
+test('web build: no ads at all — no continue-with-ad button, no ad badge on boosters', async ({ page }) => {
+  // a returning player with no coins and no boosters left
   await page.addInitScript(() => {
-    (window as unknown as { __ads: number }).__ads = 0;
-    (window as unknown as { CrazyGames: unknown }).CrazyGames = { SDK: {
-      init: async () => undefined,
-      ad: { requestAd: (_t: string, cb: { adStarted?: () => void; adFinished?: () => void }) => { (window as unknown as { __ads: number }).__ads++; cb.adStarted?.(); setTimeout(() => cb.adFinished?.(), 50); } },
-      game: {},
-    } };
+    const d = new Date();
+    const last = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    localStorage.setItem('screw-and-rescue.save.v1', JSON.stringify({ v: 1, coins: 0, rooms: {}, boosters: { slot: 0, undo: 0, hammer: 0 }, daily: { last, streak: 1 } }));
   });
-  await page.goto('/?q=low&level=33');
-  await expect(page.getByTestId('level')).toHaveText('Level 33', { timeout: 60_000 });
-  // play badly on purpose: always a screw that has no active box (it goes to the tray) until the tray is full
-  const playBadly = () => page.evaluate(() => {
-    const x = (window as unknown as { __game: G }).__game.game;
-    const q = () => x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
-    for (let k = 0; k < 200 && q().status === 'play'; k++) {
-      const f = q().freeScrews();
-      const wrong = f.filter((id) => q().iced[id] || !q().boxes.some((b) => b && b.color === q().screws[id].color));
-      x.tap((wrong.length ? wrong : f)[0]);
-    }
-    return x.puzzle.status === 'lost' ? x.lostReason : x.puzzle.status;
-  });
-  expect(await playBadly()).toBe('tray');
-  await expect(page.getByTestId('lost-title')).toHaveText('Tray full!', { timeout: 20_000 });
-  await expect(page.getByTestId('continue')).toHaveText('Watch an ad for +1 tray slot and continue');
-  await page.getByTestId('continue').click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as { __game: G }).__game.game.mode)).toBe('play');
-  expect(await page.evaluate(() => (window as unknown as { __ads: number }).__ads)).toBe(1);
-  expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.tray.length)).toBe(5);
-  // second loss: the ad continue was used for this level, only retry
-  expect(await playBadly()).not.toBe('play');
-  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId('continue')).toHaveCount(0);
-  // retry is instant (timed in the page: the headless browser renders in software)
-  const ms = await page.evaluate(() => {
-    const t = performance.now();
-    (document.querySelector('[data-testid=retry]') as HTMLElement).click();
-    return performance.now() - t;
-  });
-  expect(ms).toBeLessThan(1000);
-  await expect(page.getByTestId('lost')).toHaveCount(0);
-  // two fails on this level → the hint bulb (never automatic)
-  expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.fails)).toBe(2);
-  await expect(page.getByTestId('hint')).toBeVisible();
-  await expect(page.locator('.hand')).toHaveCount(0);
-  await page.getByTestId('hint').click();
-  await expect(page.locator('.hand')).toBeVisible();
-  // still once per level after a retry
-  await playBadly();
-  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId('continue')).toHaveCount(0);
-});
-
-test('no ad SDK (web build): the ad continue says no ad is available and rewards nothing', async ({ page }) => {
   await page.goto('/?q=low&level=12');
   await expect(page.getByTestId('level')).toHaveText('Level 12', { timeout: 60_000 });
+  await expect(page.locator('[data-booster] .cost svg')).toHaveCount(3); // coin icons, not the ad icon
+  await page.getByTestId('booster-slot').click();
+  await expect(page.locator('#toast')).toHaveText('Not enough coins');
   await page.evaluate(() => {
     const x = (window as unknown as { __game: G }).__game.game;
     const q = () => x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
@@ -145,11 +100,8 @@ test('no ad SDK (web build): the ad continue says no ad is available and rewards
     }
   });
   await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
-  if ((await page.getByTestId('continue').count()) > 0) {
-    await page.getByTestId('continue').click();
-    await expect(page.locator('#toast')).toHaveText('No ad available right now, try later');
-    expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.mode)).toBe('lost');
-  }
+  await expect(page.getByTestId('continue')).toHaveCount(0);
+  await expect(page.getByTestId('retry')).toBeVisible();
 });
 
 test('a new mechanic gets a one-screen tip on its first level', async ({ page }) => {
@@ -174,7 +126,67 @@ test('menu: pets, shop, daily gift, settings (French)', async ({ page }) => {
   await page.getByTestId('item-party').click(); // 80 coins: not enough yet
   await expect(page.getByTestId('item-party')).not.toHaveClass(/sel/);
   await page.getByTestId('tab-settings').click();
+  await expect(page.locator('[data-lang]')).toHaveCount(10);
   await page.getByTestId('lang-fr').click();
   await page.getByTestId('resume').click();
   await expect(page.getByTestId('level')).toHaveText('Niveau 3');
+  // the choice is saved
+  await page.reload();
+  await expect(page.getByTestId('level')).toHaveText('Niveau 3', { timeout: 60_000 });
 });
+
+/** Every visible text element stays inside the screen and inside its own box (no clipped / overflowing text). */
+async function overflow(page: import('@playwright/test').Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const bad: string[] = [];
+    const W = innerWidth;
+    const H = innerHeight;
+    for (const el of document.querySelectorAll<HTMLElement>('#ui *, #toast')) {
+      const st = getComputedStyle(el);
+      if (st.display === 'none' || st.visibility === 'hidden' || el.closest('[hidden]')) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim());
+      if (!own) continue;
+      if (r.left < -1 || r.right > W + 1 || r.bottom > H + 1) bad.push(`outside: ${el.className || el.tagName} "${el.textContent!.trim().slice(0, 40)}"`);
+      if (el.scrollWidth > el.clientWidth + 2 && st.overflow !== 'visible') bad.push(`clipped: ${el.className || el.tagName} "${el.textContent!.trim().slice(0, 40)}"`);
+    }
+    return bad;
+  });
+}
+
+for (const lang of ['de', 'ru', 'fr', 'it', 'es', 'pt', 'nl', 'pl', 'tr']) {
+  test(`text fits at 390x844 in ${lang}: HUD, tips, boosters, menu panels, fail card, mechanic tip`, async ({ page }) => {
+    const seen: Record<string, string[]> = {};
+    const check = async (where: string) => {
+      const b = await overflow(page);
+      if (b.length) seen[where] = b;
+    };
+    await page.goto(`/?q=low&level=3&lang=${lang}`);
+    await expect(page.getByTestId('tip')).toBeVisible({ timeout: 60_000 });
+    await check('level 3');
+    for (const tab of ['pets', 'shop', 'daily', 'settings']) {
+      await page.getByTestId('menu').click();
+      await page.getByTestId(`tab-${tab}`).click();
+      await check(`menu ${tab}`);
+      await page.getByTestId('resume').click();
+    }
+    await page.goto(`/?q=low&level=35&lang=${lang}`);
+    await expect(page.getByTestId('mechanic-tip')).toBeVisible({ timeout: 60_000 });
+    await check('mechanic tip');
+    await page.getByTestId('gotit').click();
+    await page.evaluate(() => {
+      const x = (window as unknown as { __game: G }).__game.game;
+      const q = () => x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
+      for (let k = 0; k < 200 && q().status === 'play'; k++) {
+        const f = q().freeScrews();
+        const wrong = f.filter((id) => q().iced[id] || !q().boxes.some((b) => b && b.color === q().screws[id].color));
+        x.tap((wrong.length ? wrong : f)[0]);
+      }
+    });
+    await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+    await check('fail card');
+    await page.screenshot({ path: `test-results/fit-${lang}-fail.png` });
+    expect(seen).toEqual({});
+  });
+}

@@ -1,6 +1,7 @@
 import type { PetKind } from '../art/pets';
+import type { Lang } from './i18n';
 
-/** Progress, wallet, cosmetics and settings. Stored through the platform (CrazyGames Data Module / localStorage). */
+/** Progress, wallet, cosmetics and settings. Stored through the platform (CrazyGames Data Module, else localStorage under SAVE_KEY only). */
 export interface RoomRecord {
   stars: number;
   bones: number;
@@ -22,7 +23,7 @@ export interface SaveData {
   owned: string[];
   looks: Record<PetKind, Look>;
   daily: { last: string; streak: number };
-  settings: { lang: 'en' | 'fr' | ''; sound: boolean; music: boolean; vibration: boolean };
+  settings: { lang: Lang | ''; sound: boolean; music: boolean; vibration: boolean };
   seenTips: number[];
   /** Booster stock (bought with coins, or given by rewarded ads / the daily reward). */
   boosters: Record<Booster, number>;

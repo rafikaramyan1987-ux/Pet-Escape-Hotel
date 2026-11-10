@@ -3,6 +3,29 @@
 @import '@fontsource/fredoka/700.css';
 @import '@fontsource/lilita-one/400.css';
 
+/* Lilita One and Fredoka have no Cyrillic: Russian falls back, glyph by glyph, to the rounded Nunito (Cyrillic only) */
+@font-face {
+  font-family: 'Lilita Cyr';
+  font-weight: 400;
+  font-display: swap;
+  src: url('../node_modules/@fontsource/nunito/files/nunito-cyrillic-900-normal.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Fredoka Cyr';
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('../node_modules/@fontsource/nunito/files/nunito-cyrillic-700-normal.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Fredoka Cyr';
+  font-weight: 700 900;
+  font-display: swap;
+  src: url('../node_modules/@fontsource/nunito/files/nunito-cyrillic-800-normal.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
 :root {
   --ink: #3b2346;
   --cream: #fff4dc;
@@ -14,7 +37,7 @@
   --night: #15132f;
   /* UI unit: ~0.9px on a 390-wide phone, scales with the short side */
   --u: min(calc(100vw / 440), calc(100vh / 780));
-  font-family: 'Fredoka', system-ui, sans-serif;
+  font-family: 'Fredoka', 'Fredoka Cyr', system-ui, sans-serif;
   color: var(--ink);
 }
 
@@ -68,7 +91,7 @@ svg { width: 100%; height: 100%; display: block; }
   font-weight: 600; font-size: calc(var(--u) * 12); letter-spacing: 0.08em; text-transform: uppercase; color: #8a6a7a;
 }
 .room-no svg { width: calc(var(--u) * 12); height: calc(var(--u) * 12); color: var(--gold-2); }
-.room-title { font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 26); line-height: 1.05; }
+.room-title { font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 26); line-height: 1.05; }
 .stars { display: flex; gap: calc(var(--u) * 3); margin-top: calc(var(--u) * 3); }
 .star { width: calc(var(--u) * 24); height: calc(var(--u) * 24); color: #d9c6a8; display: block; }
 .star.on { color: var(--gold); filter: drop-shadow(0 0 calc(var(--u) * 5) rgba(255, 200, 80, 0.7)); }
@@ -81,7 +104,7 @@ svg { width: 100%; height: 100%; display: block; }
   border-radius: 999px;
 }
 .bones svg { width: calc(var(--u) * 34); height: calc(var(--u) * 34); transform: rotate(-20deg); filter: drop-shadow(0 0 calc(var(--u) * 6) rgba(255, 200, 100, 0.9)); }
-.bones b { font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 26); }
+.bones b { font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-weight: 400; font-size: calc(var(--u) * 26); }
 .bones span { font-weight: 700; font-size: calc(var(--u) * 17); color: #8a6a7a; }
 
 .round {
@@ -150,7 +173,7 @@ svg { width: 100%; height: 100%; display: block; }
   position: absolute; left: 50%; bottom: calc(var(--u) * -18); translate: -50% 0;
   background: var(--red); color: #fff; border: calc(var(--u) * 2.5) solid var(--ink);
   border-radius: 999px; padding: 0 calc(var(--u) * 10);
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 14); letter-spacing: 0.03em; white-space: nowrap;
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 14); letter-spacing: 0.03em; white-space: nowrap;
 }
 
 .ability {
@@ -163,7 +186,7 @@ svg { width: 100%; height: 100%; display: block; }
 .ab-icon { width: calc(var(--u) * 48); height: calc(var(--u) * 48); margin-top: calc(var(--u) * -10); color: var(--cream); }
 .ab-label {
   position: absolute; bottom: calc(var(--u) * 10);
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 17); color: var(--ink); letter-spacing: 0.04em; text-transform: uppercase;
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 17); color: var(--ink); letter-spacing: 0.04em; text-transform: uppercase;
 }
 
 @media (orientation: landscape) {
@@ -177,7 +200,7 @@ svg { width: 100%; height: 100%; display: block; }
   position: absolute; translate: -50% 0; text-align: center; display: grid; justify-items: center; gap: calc(var(--u) * 4);
 }
 .label .nm {
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 30); color: var(--cream);
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 30); color: var(--cream);
   -webkit-text-stroke: calc(var(--u) * 6) var(--ink); paint-order: stroke fill;
   text-shadow: 0 calc(var(--u) * 4) 0 var(--ink);
 }
@@ -194,15 +217,15 @@ svg { width: 100%; height: 100%; display: block; }
 
 .sheet-title {
   position: absolute; left: 0; right: 0; top: calc(var(--u) * 26); text-align: center;
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 34); color: var(--cream); letter-spacing: 0.06em;
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 34); color: var(--cream); letter-spacing: 0.06em;
   -webkit-text-stroke: calc(var(--u) * 6) var(--ink); paint-order: stroke fill; text-shadow: 0 calc(var(--u) * 4) 0 var(--ink);
 }
-.sheet-title small { display: block; font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: calc(var(--u) * 14); letter-spacing: 0.3em; -webkit-text-stroke: 0; color: #b9b3e8; text-shadow: none; margin-top: calc(var(--u) * 4); }
+.sheet-title small { display: block; font-family: 'Fredoka', 'Fredoka Cyr', sans-serif; font-weight: 600; font-size: calc(var(--u) * 14); letter-spacing: 0.3em; -webkit-text-stroke: 0; color: #b9b3e8; text-shadow: none; margin-top: calc(var(--u) * 4); }
 
 /* logo */
 .logo {
   position: absolute; left: 50%; top: 7%; translate: -50% 0; text-align: center;
-  font-family: 'Lilita One', sans-serif; line-height: 0.86; transform: rotate(-3deg);
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; line-height: 0.86; transform: rotate(-3deg);
   filter: drop-shadow(0 calc(var(--u) * 14) calc(var(--u) * 18) rgba(5, 3, 25, 0.6));
 }
 .logo .l1, .logo .l2 { display: block; position: relative; }
@@ -217,13 +240,13 @@ svg { width: 100%; height: 100%; display: block; }
   display: inline-flex; align-items: center; gap: calc(var(--u) * 10); margin-top: calc(var(--u) * 16);
   padding: calc(var(--u) * 6) calc(var(--u) * 22); border-radius: 999px;
   background: var(--red); border: calc(var(--u) * 5) solid var(--ink); box-shadow: 0 calc(var(--u) * 6) 0 var(--ink);
-  font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: calc(var(--u) * 22); letter-spacing: 0.2em; color: #fff; -webkit-text-stroke: 0;
+  font-family: 'Fredoka', 'Fredoka Cyr', sans-serif; font-weight: 700; font-size: calc(var(--u) * 22); letter-spacing: 0.2em; color: #fff; -webkit-text-stroke: 0;
 }
 .logo .plate svg { width: calc(var(--u) * 24); height: calc(var(--u) * 24); color: var(--gold); }
 .logo .moon { position: absolute; right: calc(var(--u) * -74); top: calc(var(--u) * -34); width: calc(var(--u) * 70); height: calc(var(--u) * 70); color: #fff2c8; filter: drop-shadow(0 0 calc(var(--u) * 16) rgba(255, 240, 190, 0.9)); transform: rotate(18deg); }
 
 /* ── game screens ────────────────────────────────── */
-#app.blocked #ui, #app.blocked #view { pointer-events: none; }
+#app.blocked #ui, #app.blocked #view, #app.frozen #ui, #app.frozen #view { pointer-events: none; }
 #ui > * { pointer-events: auto; }
 #ui .hud { pointer-events: none; }
 #ui .hud button, #ui .hud .card { pointer-events: auto; }
@@ -232,7 +255,7 @@ svg { width: 100%; height: 100%; display: block; }
   position: absolute; left: 50%; top: 30%; translate: -50% 0; z-index: 30; pointer-events: none;
   background: var(--ink); color: var(--cream); border-radius: 999px; padding: calc(var(--u) * 8) calc(var(--u) * 18);
   font-weight: 700; font-size: calc(var(--u) * 16); opacity: 0; transition: opacity 0.2s, transform 0.2s; transform: translateY(8px);
-  box-shadow: 0 calc(var(--u) * 6) calc(var(--u) * 16) rgba(0, 0, 0, 0.4); white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 calc(var(--u) * 6) calc(var(--u) * 16) rgba(0, 0, 0, 0.4); white-space: normal; text-align: center; width: max-content; max-width: 92vw; line-height: 1.2;
 }
 #toast.show { opacity: 1; transform: none; }
 
@@ -248,7 +271,7 @@ svg { width: 100%; height: 100%; display: block; }
 .topbar { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: calc(var(--u) * 10); }
 .coins { margin-left: auto; }
 .coins svg { width: calc(var(--u) * 30); height: calc(var(--u) * 30); }
-.coins b { font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 22); }
+.coins b { font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-weight: 400; font-size: calc(var(--u) * 22); }
 
 .home .logo.small { position: relative; left: auto; top: auto; translate: none; margin: calc(var(--u) * 18) 0 calc(var(--u) * 10); }
 .home .logo.small .l1 { font-size: calc(var(--u) * 60); }
@@ -266,12 +289,12 @@ button { font-family: inherit; cursor: pointer; }
   border: calc(var(--u) * 3.5) solid var(--ink); border-radius: calc(var(--u) * 20);
   background: linear-gradient(180deg, #fffaf0, var(--cream) 55%, var(--cream-2));
   box-shadow: 0 calc(var(--u) * 5) 0 var(--ink), 0 calc(var(--u) * 10) calc(var(--u) * 16) rgba(5, 3, 20, 0.4);
-  color: var(--ink); font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 22); letter-spacing: 0.02em;
+  color: var(--ink); font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 22); letter-spacing: 0.02em;
   transition: transform 0.08s;
 }
 .big:active { transform: translateY(calc(var(--u) * 3)); box-shadow: 0 calc(var(--u) * 2) 0 var(--ink); }
 .big svg { width: calc(var(--u) * 28); height: calc(var(--u) * 28); color: var(--gold-2); flex: none; }
-.big small { width: 100%; text-align: center; font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: calc(var(--u) * 13); color: #8a6a7a; margin-top: calc(var(--u) * -6); }
+.big small { width: 100%; text-align: center; font-family: 'Fredoka', 'Fredoka Cyr', sans-serif; font-weight: 600; font-size: calc(var(--u) * 13); color: #8a6a7a; margin-top: calc(var(--u) * -6); }
 .big.primary { background: radial-gradient(circle at 38% 20%, #ffe7a0 0%, var(--gold) 50%, var(--gold-2) 100%); font-size: calc(var(--u) * 28); min-height: calc(var(--u) * 72); }
 .big.primary svg { color: var(--cream); }
 .big.primary small { color: #6a3a1a; }
@@ -279,12 +302,12 @@ button { font-family: inherit; cursor: pointer; }
 .big .dot { position: absolute; right: calc(var(--u) * -6); top: calc(var(--u) * -6); width: calc(var(--u) * 18); height: calc(var(--u) * 18); border-radius: 50%; background: var(--red); border: calc(var(--u) * 3) solid var(--ink); }
 .big.poor { filter: grayscale(0.7); }
 .big:disabled { opacity: 0.85; }
-.noad { font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: calc(var(--u) * 14); }
+.noad { font-family: 'Fredoka', 'Fredoka Cyr', sans-serif; font-weight: 700; font-size: calc(var(--u) * 14); }
 @keyframes wiggle { 0%, 80%, 100% { transform: rotate(0); } 85% { transform: rotate(-2deg); } 90% { transform: rotate(2deg); } 95% { transform: rotate(-1deg); } }
 .link { background: none; border: 0; color: #8a6a7a; font-weight: 700; font-size: calc(var(--u) * 15); text-decoration: underline; margin-top: calc(var(--u) * 4); }
 
 .panel { width: min(100%, calc(var(--u) * 420)); margin-top: calc(var(--u) * 12); padding: calc(var(--u) * 14); display: flex; flex-direction: column; gap: calc(var(--u) * 10); }
-.panel h2, .dialog h2 { margin: 0; font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 26); text-align: center; display: flex; align-items: center; justify-content: center; gap: calc(var(--u) * 8); }
+.panel h2, .dialog h2 { margin: 0; font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-weight: 400; font-size: calc(var(--u) * 26); text-align: center; display: flex; align-items: center; justify-content: center; gap: calc(var(--u) * 8); }
 .panel h2 svg, .dialog h2 svg { width: calc(var(--u) * 28); height: calc(var(--u) * 28); color: var(--gold-2); }
 .sub { text-align: center; font-weight: 700; display: flex; justify-content: center; align-items: center; gap: calc(var(--u) * 4); }
 .sub svg { width: calc(var(--u) * 20); height: calc(var(--u) * 20); color: var(--gold); }
@@ -292,7 +315,7 @@ button { font-family: inherit; cursor: pointer; }
 .tab {
   min-width: calc(var(--u) * 46); height: calc(var(--u) * 42); padding: 0 calc(var(--u) * 10); border-radius: calc(var(--u) * 14);
   border: calc(var(--u) * 3) solid var(--ink); background: #e9d6b4; color: var(--ink);
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 18); display: grid; place-items: center;
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 18); display: grid; place-items: center;
 }
 .tab svg { width: calc(var(--u) * 18); height: calc(var(--u) * 18); color: #8a6a7a; }
 .tab.on { background: var(--gold); box-shadow: 0 calc(var(--u) * 3) 0 var(--ink); }
@@ -303,7 +326,7 @@ button { font-family: inherit; cursor: pointer; }
   padding: calc(var(--u) * 8); border-radius: calc(var(--u) * 16); border: calc(var(--u) * 3) solid var(--ink); background: #fffaf0; color: var(--ink);
   box-shadow: 0 calc(var(--u) * 4) 0 var(--ink);
 }
-.roomcard .no { grid-row: span 2; width: calc(var(--u) * 38); height: calc(var(--u) * 38); border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: var(--cream); font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 20); border: calc(var(--u) * 2.5) solid var(--ink); }
+.roomcard .no { grid-row: span 2; width: calc(var(--u) * 38); height: calc(var(--u) * 38); border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: var(--cream); font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 20); border: calc(var(--u) * 2.5) solid var(--ink); }
 .roomcard .no svg { width: 55%; height: 55%; }
 .roomcard .nm { font-weight: 700; font-size: calc(var(--u) * 14); line-height: 1.1; }
 .roomcard .stars { display: flex; gap: calc(var(--u) * 2); }
@@ -333,7 +356,7 @@ button { font-family: inherit; cursor: pointer; }
 .checks li svg { width: calc(var(--u) * 22); height: calc(var(--u) * 22); color: #d9c6a8; }
 .checks li.ok { color: var(--ink); }
 .checks li.ok svg { color: var(--gold); }
-.gain { display: flex; justify-content: center; align-items: center; gap: calc(var(--u) * 6); font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 24); }
+.gain { display: flex; justify-content: center; align-items: center; gap: calc(var(--u) * 6); font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 24); }
 .gain svg { width: calc(var(--u) * 32); height: calc(var(--u) * 32); }
 .gain b { font-weight: 400; }
 .setrow { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: calc(var(--u) * 17); }
@@ -342,7 +365,7 @@ button { font-family: inherit; cursor: pointer; }
 .days { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--u) * 6); }
 .day { border: calc(var(--u) * 2.5) solid var(--ink); border-radius: calc(var(--u) * 12); padding: calc(var(--u) * 4); background: #fffaf0; display: grid; justify-items: center; font-size: calc(var(--u) * 12); }
 .day svg { width: calc(var(--u) * 24); height: calc(var(--u) * 24); }
-.day b { font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 16); }
+.day b { font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-weight: 400; font-size: calc(var(--u) * 16); }
 .day.got { opacity: 0.45; }
 .day.today { background: var(--gold); transform: scale(1.06); box-shadow: 0 0 0 calc(var(--u) * 3) var(--gold), 0 0 calc(var(--u) * 16) rgba(255, 197, 72, 0.7); }
 .day:last-child { grid-column: span 1; }
@@ -391,7 +414,7 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ── Screw & Rescue ─────────────────────────────── */
 .levelpill { padding: calc(var(--u) * 6) calc(var(--u) * 18); }
-.levelpill b { font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 24); }
+.levelpill b { font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-weight: 400; font-size: calc(var(--u) * 24); }
 .tutorial-text {
   position: absolute; left: 50%; bottom: calc(var(--u) * 40); translate: -50% 0;
   padding: calc(var(--u) * 8) calc(var(--u) * 18); font-weight: 700; font-size: calc(var(--u) * 18); white-space: nowrap;
@@ -415,7 +438,7 @@ body { background: #f7c2a8; }
 .dialog.result { padding-top: calc(var(--u) * 34); position: relative; }
 .dialog.result .ribbon {
   position: absolute; left: 50%; top: calc(var(--u) * -30); translate: -50% 0; white-space: nowrap;
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 40); color: #fff; letter-spacing: 0.03em;
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 40); color: #fff; letter-spacing: 0.03em;
   background: linear-gradient(180deg, #ff8fb8, #ff5f8f); border: calc(var(--u) * 4) solid var(--ink); border-radius: calc(var(--u) * 18);
   padding: calc(var(--u) * 4) calc(var(--u) * 30); box-shadow: 0 calc(var(--u) * 6) 0 var(--ink);
   -webkit-text-stroke: calc(var(--u) * 5) var(--ink); paint-order: stroke fill;
@@ -453,7 +476,7 @@ body { background: #f7c2a8; }
 .booster .cost {
   position: absolute; top: calc(var(--u) * -10); right: calc(var(--u) * -10); min-width: calc(var(--u) * 30); height: calc(var(--u) * 28); padding: 0 calc(var(--u) * 6);
   display: flex; align-items: center; gap: calc(var(--u) * 2); border-radius: 999px; background: var(--gold); border: calc(var(--u) * 2.5) solid var(--ink);
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 15); color: var(--ink);
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 15); color: var(--ink);
 }
 .booster .cost svg { width: calc(var(--u) * 18); height: calc(var(--u) * 18); color: #7bdc8f; }
 .booster.active { background: radial-gradient(circle at 38% 20%, #ffe7a0, var(--gold)); transform: translateY(calc(var(--u) * -6)); }
@@ -482,7 +505,7 @@ body { background: #f7c2a8; }
 .dialog.mtip .ribbon {
   position: absolute; top: calc(var(--u) * -18); left: 50%; translate: -50% 0; padding: calc(var(--u) * 4) calc(var(--u) * 22);
   background: linear-gradient(180deg, #7bdc8f, #3fae5f); color: #fff; border: calc(var(--u) * 3.5) solid var(--ink); border-radius: calc(var(--u) * 14);
-  font-family: 'Lilita One', sans-serif; font-size: calc(var(--u) * 22); -webkit-text-stroke: calc(var(--u) * 1) var(--ink);
+  font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-size: calc(var(--u) * 22); -webkit-text-stroke: calc(var(--u) * 1) var(--ink);
 }
 .mtip-img { width: calc(var(--u) * 96); height: calc(var(--u) * 96); object-fit: contain; filter: drop-shadow(0 calc(var(--u) * 4) 0 rgba(59, 35, 70, 0.35)); }
 .dialog .continues { gap: calc(var(--u) * 8); }
@@ -499,6 +522,26 @@ body { background: #f7c2a8; }
 .tierbadge.veryhard { background: linear-gradient(180deg, #b0122a, #6e0718); animation: wiggle 2s ease-in-out infinite; }
 .movespill { position: absolute; top: max(calc(var(--u) * 70), calc(env(safe-area-inset-top) + var(--u) * 56)); right: calc(var(--u) * 14); padding: calc(var(--u) * 3) calc(var(--u) * 12); gap: calc(var(--u) * 5); font-size: calc(var(--u) * 13); }
 .movespill span { font-weight: 700; color: #8a6a7a; }
-.movespill b { font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 20); }
+.movespill b { font-family: 'Lilita One', 'Lilita Cyr', sans-serif; font-weight: 400; font-size: calc(var(--u) * 20); }
 .movespill small { font-weight: 700; color: #8a6a7a; }
 .movespill.over b { color: #e0383e; }
+
+/* ── languages (Settings) ────────────────────────── */
+.langs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--u) * 6); margin: calc(var(--u) * 6) 0 calc(var(--u) * 4); }
+.langs .toggle { margin: 0; min-width: 0; height: calc(var(--u) * 34); font-size: calc(var(--u) * 15); padding: 0 calc(var(--u) * 6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setrow > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+
+/* ── title screen (GameDistribution / GamePix builds) ── */
+.title {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--u) * 18);
+  padding: max(calc(var(--u) * 24), env(safe-area-inset-top)) calc(var(--u) * 20) calc(var(--u) * 24);
+  background: linear-gradient(180deg, #ffe9c7 0%, #ffd3b5 50%, #f7b9a8 100%); pointer-events: auto; z-index: 20;
+}
+.title .logo { position: relative; left: auto; top: auto; translate: none; margin-bottom: calc(var(--u) * 10); }
+.title .logo .l1 { font-size: calc(var(--u) * 80); }
+.title .logo .l2 { font-size: calc(var(--u) * 60); }
+.title .logo .sh, .title .logo .ol { -webkit-text-stroke-width: calc(var(--u) * 15); }
+.title .tagline { margin: 0; font-weight: 700; font-size: calc(var(--u) * 20); text-align: center; color: var(--ink); max-width: calc(var(--u) * 380); }
+.title .big { width: min(100%, calc(var(--u) * 300)); }
+.title .controls { color: #7a5a6a; }
+.booster.poor { filter: grayscale(0.7); opacity: 0.8; }

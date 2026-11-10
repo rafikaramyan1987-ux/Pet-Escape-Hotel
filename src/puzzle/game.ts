@@ -3,8 +3,8 @@ import type { Audio } from '../platform/audio';
 import type { Platform } from '../platform/sdk';
 import { BOOSTER_PRICE, type Booster, type SaveData, SAVE_KEY, recordLevel } from '../game/save';
 import { bossHat, petId, petOfLevel, type PetVariant } from '../game/collection';
-import { item } from '../game/shop';
-import { name, t } from '../game/i18n';
+import { itemName } from '../game/shop';
+import { t } from '../game/i18n';
 import { LEVELS } from './levels';
 import { type LoseReason, Puzzle } from './model';
 import { MECHANIC_INTRO, type Mechanic } from './mechanics';
@@ -28,7 +28,7 @@ export const MAX_TRAY = 8;
 
 /**
  * Screw & Rescue controller: one level at a time (model + 3D view), tap input, tutorial hand, boosters, hints,
- * results, progress and the CrazyGames gameplay events around real play only.
+ * results, progress and the portal's gameplay events around real play only.
  */
 export class Game {
   readonly pipe: Pipeline;
@@ -43,6 +43,8 @@ export class Game {
   hammerMode = false;
   /** A menu panel is open (gameplay paused). */
   paused = false;
+  /** The portal paused the game (an ad, a pause event): nothing moves and input is ignored until it resumes. */
+  frozen = false;
   /** Autoplay bot: seconds between taps (recordings speed it up). */
   botDelay = 1.0;
   botWait = 0.9;
@@ -170,7 +172,7 @@ export class Game {
 
   private onPointer(e: PointerEvent): void {
     this.audio.unlock();
-    if (this.mode !== 'play' || this.autoplay || this.paused) return;
+    if (this.mode !== 'play' || this.autoplay || this.paused || this.frozen) return;
     const p = this.local(e);
     if (this.hammerMode) {
       const plank = this.view.pickPlank(p.x, p.y, p.w, p.h);
@@ -267,6 +269,11 @@ export class Game {
       this.persist();
       return true;
     }
+    // no ads in this build (web): the button just says the coins are missing
+    if (!this.platform.adsEnabled) {
+      this.hud.toast(t('notEnough'), 1.6);
+      return false;
+    }
     if (await this.watchAd()) return true;
     this.hud.noAd(b);
     return false;
@@ -333,7 +340,7 @@ export class Game {
    * slot; only when the tray filled up and one more slot really gets you going again).
    */
   canContinue(): boolean {
-    if (this.mode !== 'lost' || this.lostReason !== 'tray' || this.adContinueLevel === this.def.id || this.puzzle.tray.length >= MAX_TRAY) return false;
+    if (!this.platform.adsEnabled || this.mode !== 'lost' || this.lostReason !== 'tray' || this.adContinueLevel === this.def.id || this.puzzle.tray.length >= MAX_TRAY) return false;
     return Puzzle.replay(this.def, [{ t: 'slot' }, ...this.puzzle.history]).status === 'play';
   }
 
@@ -356,7 +363,7 @@ export class Game {
   // ─── flow ────────────────────────────────────────────────────────────────
   next(): void {
     this.platform.policy.roomsDone++;
-    void this.platform.maybeMidgame().then(() => {
+    void this.platform.midgame('between').then(() => {
       const n = this.index + 1;
       if (n >= LEVELS.length) {
         this.hud.moreSoon();
@@ -396,12 +403,13 @@ export class Game {
       this.persist();
       this.audio.play('coin');
       const petName = this.pet.v === 0 ? t(def.pet) : this.pet.name;
-      const extra = [newPet ? t('newPet') : '', newHat ? t('newHat', { hat: name(item(newHat)!.name) }) : ''].filter(Boolean);
+      const extra = [newPet ? t('newPet') : '', newHat ? t('newHat', { hat: itemName(newHat) }) : ''].filter(Boolean);
       this.hud.won(petName, coins, stars, before, extra);
     } else {
       this.fails++;
       this.save.fails[String(def.id)] = this.fails;
       this.persist();
+      this.platform.sadMoment();
       this.audio.play('fail');
       this.buzz(60);
       this.hud.lost(this.lostReason);
@@ -410,6 +418,10 @@ export class Game {
 
   advance(dt: number, render = true): void {
     dt = Math.min(dt, 0.1);
+    if (this.frozen) {
+      if (render) this.pipe.render();
+      return;
+    }
     this.view.update(dt);
     if (this.mode === 'play' && this.autoplay && !this.paused) {
       this.botWait -= dt;

@@ -42,8 +42,8 @@ export interface ScrewMod {
   bomb?: number;
 }
 
-/** Plank looks (cosmetic): wood, painted metal strip, striped, plywood. */
-export type PlankStyle = 0 | 1 | 2 | 3;
+/** Plank looks (cosmetic): wood, painted metal strip, striped, plywood, rounded stick, board with cut corners. */
+export type PlankStyle = 0 | 1 | 2 | 3 | 4 | 5;
 
 export interface PlankSpec {
   x: number;

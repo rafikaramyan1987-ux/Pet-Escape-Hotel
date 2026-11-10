@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AD_START_TIMEOUT, MIDGAME_GAP, Platform, type CrazySdk } from '../src/platform/sdk';
+import { CrazyGamesPlatform as Platform, type CrazySdk } from '../src/platform/crazygames';
+import { AD_START_TIMEOUT, MIDGAME_GAP } from '../src/platform/types';
 
 type Cb = { adStarted?: () => void; adFinished?: () => void; adError?: () => void };
 
@@ -102,18 +103,18 @@ describe('ad requests settle exactly once', () => {
     await expect(first).resolves.toBe('finished');
   });
 
-  it('no SDK: rewarded is granted, midgame is skipped', async () => {
+  it('no SDK: no ad and no reward', async () => {
     const p = new Platform(null);
     await expect(p.requestAd('midgame')).resolves.toBe('nosdk');
-    await expect(p.rewarded()).resolves.toBe(true);
+    await expect(p.requestAd('rewarded')).resolves.toBe('nosdk');
   });
 
-  it('rewarded reports "unavailable" on error / timeout so the button can say so', async () => {
+  it('a rewarded ad that never starts reports "timeout" (no reward) so the button can say so', async () => {
     const { sdk } = fakeSdk(() => undefined);
     const p = new Platform(sdk);
-    const r = p.rewarded();
+    const r = p.requestAd('rewarded');
     await vi.advanceTimersByTimeAsync(AD_START_TIMEOUT);
-    await expect(r).resolves.toBe('unavailable');
+    await expect(r).resolves.toBe('timeout');
   });
 
   it('gameplay stops during the ad and resumes after; calls are de-duplicated', async () => {
@@ -144,17 +145,17 @@ describe('midgame policy', () => {
     const p = new Platform(sdk);
     p.policy.roomsDone = 1;
     await vi.advanceTimersByTimeAsync(MIDGAME_GAP);
-    await p.maybeMidgame();
+    await p.midgame('between');
     expect(n).toBe(0); // too early in the game
     p.policy.roomsDone = 4;
-    await p.maybeMidgame();
+    await p.midgame('between');
     expect(n).toBe(1);
     await vi.advanceTimersByTimeAsync(MIDGAME_GAP / 2);
     p.policy.roomsDone = 5;
-    await p.maybeMidgame();
+    await p.midgame('between');
     expect(n).toBe(1); // within 2 minutes of the last one
     await vi.advanceTimersByTimeAsync(MIDGAME_GAP / 2);
-    await p.maybeMidgame();
+    await p.midgame('between');
     expect(n).toBe(2);
   });
 });
