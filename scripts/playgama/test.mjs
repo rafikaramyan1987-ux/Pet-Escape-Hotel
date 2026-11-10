@@ -30,10 +30,17 @@ const fail = (m) => {
 const ok = (m) => console.log(`  ✓ ${m}`);
 const expect = (cond, msg, detail = '') => (cond ? ok(msg) : fail(`${msg}${detail ? ` (${detail})` : ''}`));
 
-/** the Playgama platform SDK as Bridge's playgama adapter uses it; ads open for 1.5 s, the rewarded outcome is set by the test */
+/** the Playgama platform SDK as Bridge's playgama adapter uses it; ads open for 3 s, the rewarded outcome is set by the test */
 const STUB = `(() => {
-  let cb = () => {};
+  let f = () => {};
   const log = (window.__stubLog = []);
+  // the game's audio state 300 ms into each ad, sampled in the page (independent of how busy the test machine is)
+  window.__adSamples = {};
+  const cb = (type, state) => {
+    f(type, state);
+    if (state === 'open')
+      setTimeout(() => (window.__adSamples[type] = { muted: window.__playgama.muted, ctx: (window.__ctxs || []).map((c) => c.state) }), 300);
+  };
   window.__rewardedOutcome = 'complete';
   window.PLAYGAMA_SDK = {
     platformService: {
@@ -46,18 +53,18 @@ const STUB = `(() => {
     },
     advService: {
       configureAdFrequency: async () => true,
-      subscribeToAdStateChanges: (f) => (cb = f),
+      subscribeToAdStateChanges: (g) => (f = g),
       showInterstitial() {
         log.push('showInterstitial');
         setTimeout(() => cb('interstitial', 'open'), 50);
-        setTimeout(() => cb('interstitial', 'close'), 1500);
+        setTimeout(() => cb('interstitial', 'close'), 3000);
       },
       showRewarded() {
         const outcome = window.__rewardedOutcome;
         log.push('showRewarded:' + outcome);
         setTimeout(() => cb('rewarded', 'open'), 50);
-        if (outcome === 'complete') setTimeout(() => cb('rewarded', 'rewarded'), 1400);
-        setTimeout(() => cb('rewarded', 'close'), 1500);
+        if (outcome === 'complete') setTimeout(() => cb('rewarded', 'rewarded'), 2900);
+        setTimeout(() => cb('rewarded', 'close'), 3000);
       },
       showAdvancedBanners: async () => {},
       hideAdvancedBanners() {},
@@ -170,10 +177,9 @@ if (only !== 'mock') {
     // between levels: the interstitial (the 2-minute gap is skipped for the test)
     await game.skipGap(frame);
     await game.next(frame);
-    await frame.waitForFunction(() => window.__playgama.log.includes('interstitial:opened'), null, { timeout: 10_000 });
-    await frame.waitForTimeout(400);
-    const during2 = await state(frame);
-    expect(during2.muted && during2.ctx.every((c) => c === 'suspended'), 'muted + audio suspended while the interstitial is open', JSON.stringify(during2));
+    await frame.waitForFunction(() => window.__playgama.log.includes('interstitial:closed'), null, { timeout: 20_000 });
+    const during2 = await frame.evaluate(() => window.__adSamples.interstitial);
+    expect(during2?.muted && during2.ctx.every((c) => c === 'suspended'), 'muted + audio suspended while the interstitial is open', JSON.stringify(during2));
     await game.nextLevelOpened(frame);
     const log3 = await frame.evaluate(() => window.__playgama.log.slice());
     expect(log3.includes('interstitial:closed'), 'interstitial between levels shown and closed, next level opened', log3.join(','));
@@ -190,14 +196,13 @@ if (only !== 'mock') {
     const v0 = await game.reward.value(frame);
     await frame.evaluate(() => (window.__rewardedOutcome = 'cancel'));
     await btn.click({ force: true });
-    await frame.waitForTimeout(700);
-    const during1 = await state(frame);
-    await frame.waitForFunction(() => window.__playgama.log.includes('rewarded:closed'), null, { timeout: 10_000 });
+    await frame.waitForFunction(() => window.__playgama.log.includes('rewarded:closed'), null, { timeout: 20_000 });
+    const during1 = await frame.evaluate(() => window.__adSamples.rewarded);
     await frame.waitForTimeout(300);
     const v1 = await game.reward.value(frame);
     const msg = await game.reward.message(frame);
     expect(v1 === v0, 'cancelled rewarded ad: no reward', `${v0} → ${v1}`);
-    expect(during1.muted && during1.ctx.every((c) => c === 'suspended'), 'muted + audio suspended while the rewarded ad is open', JSON.stringify(during1));
+    expect(during1?.muted && during1.ctx.every((c) => c === 'suspended'), 'muted + audio suspended while the rewarded ad is open', JSON.stringify(during1));
     expect(/werbung|ad/i.test(msg), 'the game says no ad is available (2.5 s)', msg);
     await frame.waitForTimeout(2800);
 
@@ -205,7 +210,7 @@ if (only !== 'mock') {
     await frame.evaluate(() => (window.__rewardedOutcome = 'complete'));
     await frame.evaluate(() => (window.__playgama.log.length = 0));
     await btn.click({ force: true });
-    await frame.waitForFunction(() => window.__playgama.log.includes('rewarded:closed'), null, { timeout: 10_000 });
+    await frame.waitForFunction(() => window.__playgama.log.includes('rewarded:closed'), null, { timeout: 20_000 });
     await frame.waitForTimeout(500);
     const v2 = await game.reward.value(frame);
     const log = await frame.evaluate(() => window.__playgama.log.slice());
