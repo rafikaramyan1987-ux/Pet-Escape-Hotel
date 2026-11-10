@@ -3,7 +3,7 @@
  * locale). One implementation per portal, chosen at build time by `__PLATFORM__` (VITE_PLATFORM, see
  * vite.config.ts), so a build only contains its own portal's code.
  */
-export type PlatformName = 'web' | 'crazygames' | 'gd' | 'gamepix';
+export type PlatformName = 'web' | 'crazygames' | 'gd' | 'gamepix' | 'playgama';
 
 export type AdType = 'midgame' | 'rewarded';
 export type AdResult = 'finished' | 'error' | 'timeout' | 'busy' | 'nosdk';

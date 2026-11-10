@@ -35,7 +35,8 @@ export function langOf(code: string | null | undefined): Lang | null {
 /** Saved choice, else the platform locale, else the browser language, else English. */
 export function detectLang(saved: string, platformLocale: string | null = null): Lang {
   if (isLang(saved)) return saved;
-  const nav = typeof navigator !== 'undefined' ? navigator.language : null;
+  // Playgama 3.4.2: the language comes only from Bridge's platform.language (no browser fallback of our own)
+  const nav = __PLATFORM__ !== 'playgama' && typeof navigator !== 'undefined' ? navigator.language : null;
   return langOf(platformLocale) ?? langOf(nav) ?? 'en';
 }
 

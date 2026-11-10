@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Screw & Rescue - a cute 3D screw puzzle (Three.js) for the web, CrazyGames, GameDistribution and GamePix",
+  "description": "Screw & Rescue - a cute 3D screw puzzle (Three.js) for the web, CrazyGames, GameDistribution, GamePix and Playgama",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "build:crazygames": "vite build --mode crazygames",
     "build:gd": "vite build --mode gd",
     "build:gamepix": "vite build --mode gamepix",
+    "build:playgama": "vite build --mode playgama",
     "preview": "vite preview --port 4173 --strictPort",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -25,10 +26,13 @@
     "submission:gd": "node scripts/submission.mjs gd",
     "submission:gamepix": "node scripts/submission.mjs gamepix",
     "submission:web": "npm run build:web && node scripts/web/zip.mjs",
+    "submission:playgama": "npm run build:playgama && node scripts/playgama/zip.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:zips": "node scripts/check-zips.mjs",
     "check:web": "node scripts/web/check.mjs",
-    "store:web": "node scripts/web/store.mjs"
+    "store:web": "node scripts/web/store.mjs",
+    "check:playgama": "node scripts/playgama/check.mjs",
+    "test:playgama": "node scripts/playgama/test.mjs"
   },
   "dependencies": {
     "@fontsource/fredoka": "^5.3.0",
