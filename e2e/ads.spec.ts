@@ -47,7 +47,7 @@ test('tray full: "watch an ad for +1 slot" once per level (only a completed ad r
     return x.puzzle.status === 'lost' ? x.lostReason : x.puzzle.status;
   });
   expect(await playBadly()).toBe('tray');
-  await expect(page.getByTestId('lost-title')).toHaveText('Tray full!', { timeout: 20_000 });
+  await expect(page.getByTestId('lost-title')).toHaveText('Tray full!', { timeout: 90_000 });
   await expect(page.getByTestId('continue')).toHaveText('Watch an ad for +1 tray slot and continue');
   await page.getByTestId('continue').click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __game: G }).__game.game.mode)).toBe('play');
@@ -55,7 +55,7 @@ test('tray full: "watch an ad for +1 slot" once per level (only a completed ad r
   expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.tray.length)).toBe(5);
   // second loss: the ad continue was used for this level, only retry
   expect(await playBadly()).not.toBe('play');
-  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId('continue')).toHaveCount(0);
   // retry is instant (timed in the page: the headless browser renders in software)
   const ms = await page.evaluate(() => {
@@ -73,6 +73,6 @@ test('tray full: "watch an ad for +1 slot" once per level (only a completed ad r
   await expect(page.locator('.hand')).toBeVisible();
   // still once per level after a retry
   await playBadly();
-  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId('continue')).toHaveCount(0);
 });

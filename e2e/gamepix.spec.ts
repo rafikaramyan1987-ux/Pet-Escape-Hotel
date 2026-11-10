@@ -1,20 +1,21 @@
 import { test, expect, type Page } from '@playwright/test';
+import { toasts, watchToasts } from './toasts';
 
 /** GamePix build (the shipped dist-gamepix/index.html) with a stand-in for the GamePix SDK v3. */
 const SDK_URL = 'https://integration.gamepix.com/sdk/v3/gamepix.sdk.js';
 const STUB = `
 (() => {
-  const gp = (window.__gp = { calls: [], handlers: {}, reward: 'ok', manual: window.GamePixConfig && window.GamePixConfig.lifecycle });
+  const gp = (window.__gp = { calls: [], handlers: {}, reward: 'ok', manual: window.GamePixConfig && window.GamePixConfig.lifecycle, at: {} });
   const fire = (n) => gp.handlers[n] && gp.handlers[n]();
   window.GamePix = {
     lifecycle: {
       loading: (p) => gp.calls.push('loading:' + p),
       loaded: () => { gp.calls.push('loaded'); return new Promise((r) => setTimeout(() => { gp.calls.push('loaded-resolved'); r(); }, 300)); },
-      gameStart: () => gp.calls.push('gameStart'),
+      gameStart: () => { gp.calls.push('gameStart'); gp.at.gameStart = performance.now(); },
     },
     events: { on: (n, fn) => { gp.handlers[n] = fn; } },
     ads: {
-      interstitial: async () => { gp.calls.push('interstitial'); return { success: true }; },
+      interstitial: async () => { gp.calls.push('interstitial'); gp.at.interstitial = performance.now(); return { success: true }; },
       reward: () => {
         gp.calls.push('reward');
         if (gp.reward === 'nofill') return Promise.resolve({ success: false, message: 'nofill' });
@@ -29,7 +30,7 @@ const STUB = `
   };
 })();`;
 
-type Gp = { __gp: { calls: string[]; handlers: Record<string, () => void>; reward: string; manual: string; lang?: string; mutedDuringAd?: boolean } };
+type Gp = { __gp: { calls: string[]; handlers: Record<string, () => void>; reward: string; manual: string; lang?: string; mutedDuringAd?: boolean; at: Record<string, number> } };
 const gp = (page: Page) => page.evaluate(() => (window as unknown as Gp).__gp);
 
 async function returning(page: Page) {
@@ -45,7 +46,7 @@ test.beforeEach(async ({ page }) => {
   await page.route(SDK_URL, (r) => r.fulfill({ contentType: 'text/javascript', body: STUB }));
 });
 
-test('GamePix build: manual lifecycle (loading → loaded() before the title → gameStart on level 1), happy moment, no interstitial within 2 minutes', async ({ page }) => {
+test('GamePix build: manual lifecycle (loading → loaded() before the title → gameStart on level 1), happy moment, interstitials only after 2 minutes', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
@@ -67,11 +68,15 @@ test('GamePix build: manual lifecycle (loading → loaded() before the title →
     const box = await page.locator('.hand').boundingBox();
     if (box) await page.mouse.click(box.x + 14, box.y + 4);
   }
-  await expect(page.getByTestId('result')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('result')).toBeVisible({ timeout: 90_000 });
   expect((await gp(page)).calls).toContain('happy:level_complete');
   await page.getByTestId('next').click();
   await expect(page.getByTestId('level')).toHaveText('Level 2');
-  expect((await gp(page)).calls.filter((c) => c === 'interstitial' || c === 'gameStart')).toEqual(['gameStart']);
+  // between levels only, and never within 2 minutes of loading (a slow machine may take longer than that on level 1)
+  s = await gp(page);
+  expect(s.calls.filter((c) => c === 'gameStart')).toHaveLength(1);
+  if (s.calls.includes('interstitial')) expect(s.at.interstitial).toBeGreaterThanOrEqual(120_000);
+  else expect(await page.evaluate(() => performance.now())).toBeLessThan(125_000);
   expect(errors).toEqual([]);
 });
 
@@ -106,17 +111,19 @@ test('reward: granted on success, nothing on cancel or no-fill (and the "no ad" 
   await expect(page.getByTestId('level')).toHaveText('Level 6', { timeout: 30_000 });
   // cancelled
   await page.evaluate(() => ((window as unknown as Gp).__gp.reward = 'cancel'));
+  await watchToasts(page);
   await page.getByTestId('booster-slot').click();
-  await expect(page.locator('#toast')).toHaveText('No ad available right now, try later', { timeout: 10_000 });
+  await expect.poll(() => toasts(page), { timeout: 15_000 }).toEqual(['No ad available right now, try later']);
   expect((await gp(page)).mutedDuringAd).toBe(true);
   await expect(page.getByTestId('booster-slot')).not.toHaveClass(/off/);
-  await expect(page.getByTestId('booster-slot')).toBeEnabled({ timeout: 5_000 });
+  await expect(page.getByTestId('booster-slot')).toBeEnabled({ timeout: 15_000 });
   // no fill
   await page.evaluate(() => ((window as unknown as Gp).__gp.reward = 'nofill'));
   await page.getByTestId('booster-slot').click();
-  await expect(page.locator('#toast')).toHaveText('No ad available right now, try later');
+  await expect.poll(() => toasts(page), { timeout: 15_000 }).toHaveLength(2);
+  expect((await toasts(page))[1]).toBe('No ad available right now, try later');
   await expect(page.getByTestId('booster-slot')).not.toHaveClass(/off/);
-  await expect(page.getByTestId('booster-slot')).toBeEnabled({ timeout: 5_000 });
+  await expect(page.getByTestId('booster-slot')).toBeEnabled({ timeout: 15_000 });
   // completed
   await page.evaluate(() => ((window as unknown as Gp).__gp.reward = 'ok'));
   await page.getByTestId('booster-slot').click();

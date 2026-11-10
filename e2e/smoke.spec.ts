@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { toasts, watchToasts } from './toasts';
 
 declare global {
   interface Window {
@@ -88,8 +89,9 @@ test('web build: no ads at all — no continue-with-ad button, no ad badge on bo
   await page.goto('/?q=low&level=12');
   await expect(page.getByTestId('level')).toHaveText('Level 12', { timeout: 60_000 });
   await expect(page.locator('[data-booster] .cost svg')).toHaveCount(3); // coin icons, not the ad icon
+  await watchToasts(page);
   await page.getByTestId('booster-slot').click();
-  await expect(page.locator('#toast')).toHaveText('Not enough coins');
+  await expect.poll(() => toasts(page)).toContain('Not enough coins');
   await page.evaluate(() => {
     const x = (window as unknown as { __game: G }).__game.game;
     const q = () => x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
@@ -99,7 +101,7 @@ test('web build: no ads at all — no continue-with-ad button, no ad badge on bo
       x.tap((wrong.length ? wrong : f)[0]);
     }
   });
-  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 90_000 });
   await expect(page.getByTestId('continue')).toHaveCount(0);
   await expect(page.getByTestId('retry')).toBeVisible();
 });
@@ -184,7 +186,7 @@ for (const lang of ['de', 'ru', 'fr', 'it', 'es', 'pt', 'nl', 'pl', 'tr']) {
         x.tap((wrong.length ? wrong : f)[0]);
       }
     });
-    await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('lost')).toBeVisible({ timeout: 90_000 });
     await check('fail card');
     await page.screenshot({ path: `test-results/fit-${lang}-fail.png` });
     expect(seen).toEqual({});

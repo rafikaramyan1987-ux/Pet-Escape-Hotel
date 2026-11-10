@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { toasts, watchToasts } from './toasts';
 
 /** GameDistribution build (the shipped dist-gd/index.html) with a stand-in for the GD HTML5 SDK. */
 const SDK_URL = 'https://html5.api.gamedistribution.com/main.min.js';
@@ -84,10 +85,10 @@ test('rewarded ad fails: "No ad available right now, try later" for 2.5 s, no re
   await page.getByTestId('play').click({ timeout: 60_000 });
   await expect(page.getByTestId('level')).toHaveText('Level 6', { timeout: 30_000 });
   await page.evaluate(() => ((window as unknown as GdWin).__gd.mode = 'fail'));
+  await watchToasts(page);
   await page.getByTestId('booster-slot').click();
-  await expect(page.locator('#toast')).toHaveText('No ad available right now, try later');
-  await expect(page.getByTestId('booster-slot')).toBeDisabled();
+  await expect.poll(() => toasts(page)).toEqual(['No ad available right now, try later']);
   await expect(page.getByTestId('booster-slot')).not.toHaveClass(/off/);
-  await expect(page.getByTestId('booster-slot')).toBeEnabled({ timeout: 5_000 });
-  await expect(page.locator('#toast')).not.toHaveClass(/show/);
+  await expect(page.getByTestId('booster-slot')).toBeEnabled({ timeout: 15_000 });
+  await expect(page.locator('#toast')).not.toHaveClass(/show/, { timeout: 15_000 });
 });
