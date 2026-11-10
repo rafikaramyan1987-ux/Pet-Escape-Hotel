@@ -144,10 +144,12 @@ function fakeGamePix() {
       interstitial: () => (calls.push('interstitial'), adResult),
       reward: () => (calls.push('reward'), adResult),
     },
-    lang: () => 'de',
+    lang: vi.fn(() => 'de'),
     happyMoment: (n) => calls.push(`happy:${n}`),
     sadMoment: (n) => calls.push(`sad:${n}`),
   };
+  // the real SDK is window.GamePix: the legacy hooks and lang() are read from there
+  vi.stubGlobal('window', { GamePix: sdk });
   return { sdk, calls, handlers, setAd: (r: Promise<{ success: boolean }>) => (adResult = r), loaded: () => loaded() };
 }
 
@@ -159,7 +161,10 @@ async function ready(p: GamePixPlatform, f: ReturnType<typeof fakeGamePix>) {
 
 describe('GamePix', () => {
   beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('lifecycle: loading 0..100, loaded() before the menu, gameStart once when level 1 starts', async () => {
     const f = fakeGamePix();
@@ -205,6 +210,119 @@ describe('GamePix', () => {
     expect(p.muted).toBe(true);
     (f.sdk.resume as () => void)();
     expect(p.muted).toBe(false);
+  });
+
+  type Hook = 'pause' | 'resume' | 'soundOff' | 'soundOn';
+  /** The same request through the events API ('e') or the legacy window.GamePix.<name> hook ('l'). */
+  const fire = (f: ReturnType<typeof fakeGamePix>, name: Hook, via: 'e' | 'l') =>
+    via === 'e' ? f.handlers[name]() : (f.sdk[name] as () => void)();
+
+  it('legacy hooks are set on window.GamePix and are the very same handlers as the events', async () => {
+    const f = fakeGamePix();
+    const p = new GamePixPlatform(f.sdk);
+    await p.init();
+    for (const n of ['pause', 'resume', 'soundOff', 'soundOn'] as const) {
+      expect(typeof f.sdk[n]).toBe('function');
+      expect(f.sdk[n]).toBe(f.handlers[n]);
+    }
+    expect(f.calls).not.toContain('loaded'); // all before loaded()
+  });
+
+  it('soundOff / soundOn via event and legacy hook, in any order: one mute, one unmute', async () => {
+    for (const [a, b] of [['e', 'l'], ['l', 'e'], ['e', 'e'], ['l', 'l']] as const) {
+      const f = fakeGamePix();
+      const p = new GamePixPlatform(f.sdk);
+      await p.init();
+      const mute = vi.fn();
+      const paused = vi.fn();
+      p.onMuteChange = mute;
+      p.onPause = paused;
+      fire(f, 'soundOff', a);
+      fire(f, 'soundOff', b);
+      expect(p.muted).toBe(true);
+      fire(f, 'soundOn', b);
+      fire(f, 'soundOn', a);
+      expect(p.muted).toBe(false);
+      fire(f, 'soundOn', a); // a stray extra soundOn changes nothing
+      expect(mute.mock.calls).toEqual([[true], [false]]);
+      expect(paused).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('pause / resume via event and legacy hook, in any order: one pause, one resume', async () => {
+    for (const [a, b] of [['e', 'l'], ['l', 'e']] as const) {
+      const f = fakeGamePix();
+      const p = new GamePixPlatform(f.sdk);
+      await p.init();
+      const mute = vi.fn();
+      const paused = vi.fn();
+      p.onMuteChange = mute;
+      p.onPause = paused;
+      fire(f, 'pause', a);
+      fire(f, 'pause', b); // pause twice …
+      expect(p.muted).toBe(true);
+      fire(f, 'resume', b); // … resume once: resumed
+      expect(p.muted).toBe(false);
+      fire(f, 'resume', a); // the duplicate resume changes nothing
+      expect(paused.mock.calls).toEqual([[true], [false]]);
+      expect(mute.mock.calls).toEqual([[true], [false]]);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('interleaved: a portal soundOn does not unmute while paused; resume does not unmute while sound is off', async () => {
+    const f = fakeGamePix();
+    const p = new GamePixPlatform(f.sdk);
+    await p.init();
+    const mute = vi.fn();
+    const paused = vi.fn();
+    p.onMuteChange = mute;
+    p.onPause = paused;
+    fire(f, 'pause', 'l');
+    fire(f, 'soundOff', 'e');
+    fire(f, 'pause', 'e');
+    fire(f, 'soundOff', 'l');
+    fire(f, 'soundOn', 'l');
+    fire(f, 'soundOn', 'e');
+    expect(p.muted).toBe(true); // still paused
+    fire(f, 'soundOff', 'e');
+    fire(f, 'resume', 'e');
+    fire(f, 'resume', 'l');
+    expect(p.muted).toBe(true); // still sound off
+    fire(f, 'soundOn', 'e');
+    fire(f, 'soundOn', 'l');
+    expect(p.muted).toBe(false);
+    expect(mute.mock.calls).toEqual([[true], [false]]);
+    expect(paused.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('GamePix.lang() is called once, in init() before loaded(), and is the locale', async () => {
+    const f = fakeGamePix();
+    const p = new GamePixPlatform(f.sdk);
+    await p.init();
+    expect(f.sdk.lang).toHaveBeenCalledTimes(1);
+    expect(f.calls).not.toContain('loaded');
+    expect(p.locale()).toBe('de');
+    expect(p.locale()).toBe('de');
+    await ready(p, f);
+    expect(p.locale()).toBe('de');
+    expect(f.sdk.lang).toHaveBeenCalledTimes(1);
+  });
+
+  it('GamePix.lang() throwing or missing: no locale, the game still boots', async () => {
+    const f = fakeGamePix();
+    f.sdk.lang = () => {
+      throw new Error('x');
+    };
+    const p = new GamePixPlatform(f.sdk);
+    await p.init();
+    expect(p.locale()).toBeNull();
+    const g2 = fakeGamePix();
+    delete g2.sdk.lang;
+    const p2 = new GamePixPlatform(g2.sdk);
+    await p2.init();
+    expect(p2.locale()).toBeNull();
   });
 
   it('rewarded only on success === true; muted during the ad; nofill / cancel / rejection give nothing', async () => {

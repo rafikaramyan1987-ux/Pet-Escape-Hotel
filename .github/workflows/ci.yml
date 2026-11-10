@@ -47,6 +47,18 @@ jobs:
           npm run e2e -- --trace off
       - name: Build every platform (web, crazygames, gd, gamepix)
         run: npm run build:web && npm run build:crazygames && npm run build:gd && npm run build:gamepix
+      - name: GamePix bundle (build and newest submission zip) sets the legacy GamePix.soundOff / soundOn hooks and calls GamePix.lang()
+        run: |
+          gpx_hooks() {
+            grep -qE 'GamePix\.soundOff[[:space:]]*=[^=]' "$1" || { echo "$2: no GamePix.soundOff= assignment"; return 1; }
+            grep -qE 'GamePix\.soundOn[[:space:]]*=[^=]' "$1" || { echo "$2: no GamePix.soundOn= assignment"; return 1; }
+            grep -qE 'GamePix\.lang\(\)' "$1" || { echo "$2: no GamePix.lang() call"; return 1; }
+            echo "$2: GamePix.soundOff= / GamePix.soundOn= / GamePix.lang() ok"
+          }
+          gpx_hooks dist-gamepix/index.html dist-gamepix/index.html
+          zip=$(ls submission-gamepix/screw-and-rescue-gamepix-v*.zip | sort -V | tail -n 1)
+          mkdir -p ci-gpx && unzip -p "$zip" index.html > ci-gpx/index.html
+          gpx_hooks ci-gpx/index.html "$zip"
       - name: Portal packages are one self-contained file each (no asset that can go missing)
         run: |
           for p in crazygames gd gamepix; do
@@ -65,7 +77,7 @@ jobs:
           zip -j -9 -X -q ci-zips/screw-and-rescue-gd-v1.zip dist-gd/index.html
           zip -j -9 -X -q ci-zips/screw-and-rescue-gamepix-v1.zip dist-gamepix/index.html
           node scripts/check-zips.mjs ci-zips/screw-and-rescue-gd-v1.zip ci-zips/screw-and-rescue-gamepix-v1.zip
-      - name: Committed zips (GD, GamePix, CrazyGames v2) pass the zip checks
+      - name: Committed zips (GD, GamePix v1 + v2, CrazyGames v2) pass the zip checks
         run: npm run check:zips
       - name: CrazyGames package limits (< 50 MB, < 1500 files)
         run: |
