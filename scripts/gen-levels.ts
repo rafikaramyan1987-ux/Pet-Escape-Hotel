@@ -1,9 +1,8 @@
 /**
  * Generate levels (seeded, solver-verified, in their target bands) into src/puzzle/levels.json.
- *   npm run levels            → all 100 levels
+ *   npm run levels            → all 60 levels
  *   npm run levels -- 11 30   → only those (merged into the existing file)
  *   npm run levels -- 11 30 part.json → into another file (parallel runs), merge with `npm run levels -- merge part1.json …`
- * Levels 1–5 use hand-drawn layouts (FIXED in generate.ts); the generator picks their colours.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { center, generateLevel, rejects } from '../src/puzzle/generate';
@@ -26,7 +25,7 @@ if (process.argv[2] === 'merge') {
   process.exit(0);
 }
 const from = Number(process.argv[2] ?? 1);
-const to = Number(process.argv[3] ?? 100);
+const to = Number(process.argv[3] ?? 60);
 const file = process.argv[4] ?? MAIN;
 const all = read(file);
 for (let n = from; n <= to; n++) {
@@ -38,6 +37,6 @@ for (let n = from; n <= to; n++) {
   all.sort((a, b) => a.id - b.id);
   save(file, all);
   const s = g.def.planks.reduce((a, p) => a + p.screws.length, 0);
-  console.log(`level ${n}: ${g.def.planks.length} planks, ${s} screws, ${new Set(g.def.planks.flatMap((p) => p.screws)).size} colours, open ${g.def.open}, margin ${g.margin}, random-fail ${(g.failRate * 100).toFixed(0)}%, ${g.tries} tries, ${Date.now() - t0} ms`);
+  console.log(`level ${n}: ${g.def.planks.length} planks, ${s} screws, ${new Set(g.def.planks.flatMap((p) => p.screws)).size} colours, tray ${g.def.tray}, random-fail ${(g.failRate * 100).toFixed(1)}%, ${g.tries} tries, ${Date.now() - t0} ms`);
 }
 console.log('rejects', JSON.stringify(rejects));

@@ -6,7 +6,7 @@ import { type Fur, makePet } from '../art/pets';
 import { floorTextures, gradientTexture } from '../art/textures';
 import type { Look } from '../game/save';
 import { PLANK_TINTS, SCREW_HEX, drawBomb, headTexture, hiddenTexture, iceTexture, lockTexture, plankTexture } from './look';
-import { BOX_SIZE, type Color, type LevelDef, PLANK_W, Puzzle, type PuzzleEvent, SCREW_R } from './model';
+import { BOX_SIZE, type Color, type LevelDef, Puzzle, type PuzzleEvent, SCREW_R, plankWidth } from './model';
 
 /**
  * 3D presentation of a puzzle: the object (crate / cage / kennel) with the pet inside, planks and screws on
@@ -19,7 +19,7 @@ const FLOOR_Y = -OPEN_H / 2 - 0.42;
 const PLANK_D = 0.16;
 const LAYER_Z = 0.15;
 
-type Sound = 'unscrew' | 'land' | 'tray' | 'close' | 'plank' | 'thud' | 'rescue' | 'pop' | 'fail' | 'ice' | 'unlock' | 'tick' | 'boom';
+type Sound = 'unscrew' | 'land' | 'tray' | 'close' | 'plank' | 'thud' | 'rescue' | 'pop' | 'fail' | 'ice' | 'unlock' | 'tick' | 'boom' | 'warn';
 
 interface Tween {
   t0: number;
@@ -40,7 +40,6 @@ interface ScrewView {
   flying: boolean;
   /** Mechanic decorations (removed when they stop applying). */
   ice?: THREE.Group;
-  padlock?: THREE.Mesh;
   /** Shown as "?" until free. */
   masked: boolean;
 }
@@ -98,7 +97,9 @@ export class PuzzleView {
   private orbit = 0;
   private camHome: { pos: THREE.Vector3; target: THREE.Vector3; portrait: boolean } | null = null;
   private chains: { planks: number[]; g: THREE.Group }[] = [];
-  private bombs: { plank: number; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; m: THREE.Mesh; last: number }[] = [];
+  private bombs: { screw: number; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; m: THREE.Mesh; last: number }[] = [];
+  private trayHoles: THREE.Mesh[] = [];
+  private trayWarn = false;
   onSound: (s: Sound) => void = () => undefined;
 
   constructor(readonly puzzle: Puzzle, look: Look, quality: 'high' | 'low', fur?: Fur) {
@@ -292,8 +293,67 @@ export class PuzzleView {
       const sp = p.spec;
       const g = group();
       const tint = PLANK_TINTS[(sp.tint ?? p.id) % PLANK_TINTS.length];
-      const m = mesh(rbox(sp.len, PLANK_W, PLANK_D, 0.07), new THREE.MeshStandardMaterial({ map: tex, color: tint, roughness: 0.55 }));
+      const W = plankWidth(sp);
+      const style = sp.style ?? 0;
+      // four plank looks so levels don't all feel alike: wood, painted metal strip, striped, plywood
+      const mat = style === 1
+        ? new THREE.MeshStandardMaterial({ color: new THREE.Color(tint).lerp(new THREE.Color(0x9aa3b8), 0.55), roughness: 0.35, metalness: 0.55 })
+        : style === 3
+          ? new THREE.MeshStandardMaterial({ map: tex, color: new THREE.Color(tint).lerp(new THREE.Color(0xe8cf9a), 0.6), roughness: 0.7 })
+          : new THREE.MeshStandardMaterial({ map: tex, color: tint, roughness: 0.55 });
+      const m = mesh(rbox(sp.len, W, PLANK_D, style === 3 ? 0.02 : 0.07), mat);
       g.add(m);
+      if (style === 1) {
+        // rivets along the metal strip
+        for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+          const rv = mesh(puck(0.05, 0.03, 0.01, 12), metal(0xd8dce6, 0.25), false, false);
+          rv.rotation.x = Math.PI / 2;
+          rv.position.set(sx * (sp.len / 2 - 0.12), sy * (W / 2 - 0.1), PLANK_D / 2 + 0.01);
+          g.add(rv);
+        }
+      } else if (style === 2) {
+        // painted stripes across the plank
+        const n = Math.max(2, Math.floor(sp.len / 0.55));
+        for (let k = 0; k < n; k++) {
+          const st = mesh(rbox(0.12, W * 0.96, 0.012, 0.004), new THREE.MeshStandardMaterial({ color: new THREE.Color(tint).multiplyScalar(0.78), roughness: 0.6 }), false, false);
+          st.position.set(-sp.len / 2 + ((k + 0.5) * sp.len) / n, 0, PLANK_D / 2 + 0.003);
+          st.rotation.z = 0.5;
+          g.add(st);
+        }
+      }
+      if (sp.sticky) {
+        // honey goo: a glossy amber coat with drips
+        const goo = mesh(rbox(sp.len * 0.96, W * 0.9, 0.03, 0.02), new THREE.MeshPhysicalMaterial({ color: 0xffb627, roughness: 0.15, clearcoat: 1, transparent: true, opacity: 0.72 }), false, false);
+        goo.position.z = PLANK_D / 2 + 0.012;
+        goo.userData.noAO = true;
+        g.add(goo);
+        for (let k = 0; k < 4; k++) {
+          const drip = mesh(new THREE.SphereGeometry(0.07, 12, 8), new THREE.MeshPhysicalMaterial({ color: 0xffa20f, roughness: 0.1, clearcoat: 1 }), false, false);
+          drip.scale.set(1, 1.6, 0.6);
+          drip.position.set(-sp.len / 2 + 0.3 + ((sp.len - 0.6) * k) / 3, -W / 2 - 0.02, PLANK_D / 2);
+          g.add(drip);
+        }
+        g.userData.goo = goo;
+      }
+      if (sp.lock !== undefined) {
+        // a big padlock on the plank (same symbol as its key screw)
+        const pl = mesh(new THREE.PlaneGeometry(0.7, 0.7), new THREE.MeshBasicMaterial({ map: lockTexture(sp.lock, 'lock'), transparent: true, depthWrite: false, toneMapped: false }), false, false);
+        pl.userData.noAO = true;
+        pl.renderOrder = 3;
+        const holder = group(pl);
+        holder.rotation.z = -(sp.angle * Math.PI) / 180;
+        pl.position.set(0, 0, PLANK_D / 2 + 0.55);
+        g.add(holder);
+        // a chain wrapped across the plank
+        for (let k = -3; k <= 3; k++) {
+          const link = mesh(torus(0.07, 0.022), metal(0xc9ced8, 0.3), false, false);
+          link.scale.set(1.25, 0.8, 1);
+          link.position.set(k * 0.12 + 0.36, 0, PLANK_D / 2 + 0.04);
+          link.rotation.set(k % 2 ? Math.PI / 2 : 0, 0, 0);
+          g.add(link);
+        }
+        g.userData.padlock = holder;
+      }
       // little nail heads at the ends so planks read as "fixed"
       g.position.set(sp.x, sp.y, this.plankZ(sp.layer));
       g.rotation.z = (sp.angle * Math.PI) / 180;
@@ -335,21 +395,15 @@ export class PuzzleView {
       };
       if (s.ice) {
         const ice = group();
-        const block = mesh(puck(SCREW_R * 1.18, 0.2, 0.05, 32), new THREE.MeshPhysicalMaterial({ color: 0xcdeeff, roughness: 0.12, transparent: true, opacity: 0.62, clearcoat: 1 }), false, false);
+        const block = mesh(puck(SCREW_R * 1.32, 0.28, 0.07, 32), new THREE.MeshPhysicalMaterial({ color: 0xcdeeff, roughness: 0.12, transparent: true, opacity: 0.62, clearcoat: 1 }), false, false);
         block.rotation.x = Math.PI / 2;
         block.position.z = 0.1;
-        const top = mesh(new THREE.CircleGeometry(SCREW_R * 1.16, 32), new THREE.MeshBasicMaterial({ map: iceTexture(), transparent: true, depthWrite: false, toneMapped: false }), false, false);
-        top.position.z = 0.205;
+        const top = mesh(new THREE.CircleGeometry(SCREW_R * 1.3, 32), new THREE.MeshBasicMaterial({ map: iceTexture(), transparent: true, depthWrite: false, toneMapped: false }), false, false);
+        top.position.z = 0.285;
         ice.add(block, top);
         ice.traverse((o) => (o.userData.noAO = true));
         g.add(ice);
         sv.ice = ice;
-      }
-      if (s.lock >= 0) {
-        const pl = mesh(new THREE.PlaneGeometry(0.46, 0.46), new THREE.MeshBasicMaterial({ map: lockTexture(s.lock, 'lock'), transparent: true, depthWrite: false, toneMapped: false }), false, false);
-        pl.userData.noAO = true;
-        upright(pl, 0.24, 0.24);
-        sv.padlock = pl;
       }
       if (s.key >= 0) {
         const kt = mesh(new THREE.PlaneGeometry(0.42, 0.42), new THREE.MeshBasicMaterial({ map: lockTexture(s.key, 'key'), transparent: true, depthWrite: false, toneMapped: false }), false, false);
@@ -395,35 +449,35 @@ export class PuzzleView {
     }
   }
 
-  /** Bomb planks: a ticking badge with the taps left. */
+  /** Bomb screws: a ticking badge with the taps left, right on the screw. */
   private buildBombs(): void {
-    for (const p of this.puzzle.planks) {
-      if (p.spec.bomb === undefined) continue;
+    for (const sc of this.puzzle.screws) {
+      if (!sc.bomb) continue;
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 128;
-      drawBomb(canvas, this.puzzle.bombLeft(p.id), false);
+      drawBomb(canvas, this.puzzle.bombLeft(sc.id), false);
       const tex = new THREE.CanvasTexture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
-      const m = mesh(new THREE.PlaneGeometry(0.62, 0.62), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }), false, false);
+      const m = mesh(new THREE.PlaneGeometry(0.5, 0.5), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }), false, false);
       m.userData.noAO = true;
       m.renderOrder = 3;
+      const sv = this.screws[sc.id];
       const holder = group(m);
-      holder.rotation.z = -this.planks[p.id].rotation.z;
-      m.position.set(0, 0, PLANK_D / 2 + 0.2);
-      this.planks[p.id].add(holder);
-      // hazard stripes along the plank
-      const stripe = mesh(rbox(p.spec.len * 0.9, PLANK_W * 0.16, 0.02, 0.01), new THREE.MeshStandardMaterial({ color: 0xff5a3c, roughness: 0.5 }), false, false);
-      stripe.position.set(0, PLANK_W * 0.36, PLANK_D / 2 + 0.005);
-      const stripe2 = stripe.clone();
-      stripe2.position.y = -PLANK_W * 0.36;
-      this.planks[p.id].add(stripe, stripe2);
-      this.bombs.push({ plank: p.id, canvas, tex, m, last: this.puzzle.bombLeft(p.id) });
+      holder.rotation.z = -sv.g.rotation.z;
+      m.position.set(0.22, 0.26, 0.2);
+      sv.g.add(holder);
+      // a red ring around the bomb screw
+      const ring = mesh(torus(SCREW_R * 1.12, 0.04), new THREE.MeshBasicMaterial({ color: 0xff4b3e, toneMapped: false }), false, false);
+      ring.position.z = 0.11;
+      ring.userData.noAO = true;
+      sv.g.add(ring);
+      this.bombs.push({ screw: sc.id, canvas, tex, m, last: this.puzzle.bombLeft(sc.id) });
     }
   }
 
   private refreshBombs(): void {
     for (const b of this.bombs) {
-      const left = this.puzzle.bombLeft(b.plank);
+      const left = this.puzzle.bombLeft(b.screw);
       if (left === b.last || left === Infinity) continue;
       b.last = left;
       drawBomb(b.canvas, left, left <= 3);
@@ -433,10 +487,10 @@ export class PuzzleView {
     }
   }
 
-  /** The screw at a point that is in plain sight but still locked (for a "locked" wiggle), or -1. */
-  lockedAt(px: number, py: number, w: number, h: number): number {
+  /** A screw at a point that is in plain sight but blocked (locked plank, or a sticky plank in progress), or -1. */
+  blockedAt(px: number, py: number, w: number, h: number): number {
     for (const s of this.screws) {
-      if (s.flying || this.puzzle.removed[s.id] || !this.puzzle.isUncovered(s.id) || !this.puzzle.isLocked(s.id)) continue;
+      if (s.flying || this.puzzle.removed[s.id] || !this.puzzle.isUncovered(s.id) || this.puzzle.isFree(s.id)) continue;
       const sc = this.screenOf(s.id, w, h);
       if (Math.hypot(px - sc.x, py - sc.y) <= Math.max(26, sc.r * 1.4)) return s.id;
     }
@@ -445,7 +499,7 @@ export class PuzzleView {
 
   /** Locked screw tapped: the padlock wiggles. */
   wiggleLock(id: number): void {
-    const pl = this.screws[id].padlock;
+    const pl = this.planks[this.puzzle.screws[id].plank].userData.padlock as THREE.Group | undefined;
     if (!pl) return;
     this.onSound('fail');
     this.tween(0, 0.4, (k) => (pl.rotation.z = Math.sin(k * Math.PI * 6) * 0.4 * (1 - k)));
@@ -470,23 +524,16 @@ export class PuzzleView {
     base.userData.trayPart = lip.userData.trayPart = true;
     this.trayG.add(base, lip);
     this.traySlots = [];
+    this.trayHoles = [];
     for (let i = 0; i < n; i++) {
       const x = -((n - 1) * 0.72) / 2 + i * 0.72;
       const extra = i >= this.puzzle.def.tray;
-      const only = this.puzzle.trayColor[i];
-      const hole = mesh(new THREE.CircleGeometry(0.22, 28), matte(only ? new THREE.Color(SCREW_HEX[only]).multiplyScalar(0.55).getHex() : extra ? 0x2f7a5a : 0x3a3f6a, 1), false, false);
+      const hole = mesh(new THREE.CircleGeometry(0.22, 28), new THREE.MeshBasicMaterial({ color: extra ? 0x2f7a5a : 0x3a3f6a }), false, false);
       at(hole, x, 0.145, 0, -Math.PI / 2, 0, 0);
       hole.userData.trayPart = true;
+      hole.userData.base = extra ? 0x2f7a5a : 0x3a3f6a;
       this.trayG.add(hole);
-      if (only) {
-        // sticky slot: a ring of goo in its colour and the colour's symbol
-        const ring = mesh(torus(0.27, 0.06), paint(SCREW_HEX[only], 0.35, 0.6), false, false);
-        at(ring, x, 0.15, 0, -Math.PI / 2, 0, 0);
-        const sym = mesh(new THREE.CircleGeometry(0.12, 24), new THREE.MeshBasicMaterial({ map: headTexture(only), transparent: true, opacity: 0.85 }), false, false);
-        at(sym, x, 0.152, 0, -Math.PI / 2, 0, 0);
-        ring.userData.trayPart = sym.userData.trayPart = true;
-        this.trayG.add(ring, sym);
-      }
+      this.trayHoles.push(hole);
       this.traySlots.push(new THREE.Vector3(x, 0.15, 0));
     }
     this.puzzle.tray.forEach((sid, slot) => {
@@ -591,14 +638,14 @@ export class PuzzleView {
 
   private refreshQueue(): void {
     this.queueG.clear();
-    // level 1 keeps it simple; from level 2 the next two toolbox colours are shown (follow the queue)
-    const shown = this.puzzle.def.id <= 1 ? 0 : 2;
-    const upcoming = this.puzzle.def.queue.slice(this.puzzle.next, this.puzzle.next + shown);
+    // the next two boxes of the queue, small and greyed, so the player can plan ahead
+    const upcoming = this.puzzle.def.queue.slice(this.puzzle.next, this.puzzle.next + 2);
     upcoming.forEach((c, i) => {
-      const sc = i === 0 ? 1.25 : 1;
-      const chip = mesh(rbox(0.46 * sc, 0.32 * sc, 0.3, 0.08), paint(SCREW_HEX[c], 0.4, 0.5), false, false);
+      const sc = i === 0 ? 1.15 : 1;
+      const grey = new THREE.Color(SCREW_HEX[c]).lerp(new THREE.Color(0xb9b4c6), 0.55);
+      const chip = mesh(rbox(0.5 * sc, 0.3 * sc, 0.3, 0.08), paint(grey.getHex(), 0.6, 0.2), false, false);
       chip.position.set((i - (upcoming.length - 1) / 2) * 0.66, 0, 0);
-      const d = mesh(new THREE.CircleGeometry(0.13 * sc, 20), new THREE.MeshBasicMaterial({ map: headTexture(c) }), false, false);
+      const d = mesh(new THREE.CircleGeometry(0.12 * sc, 20), new THREE.MeshBasicMaterial({ map: headTexture(c, true) }), false, false);
       d.position.set((i - (upcoming.length - 1) / 2) * 0.66, 0, 0.152);
       this.queueG.add(chip, d);
     });
@@ -607,8 +654,10 @@ export class PuzzleView {
   private refreshDim(force = false): void {
     for (const s of this.screws) {
       if (s.flying) continue;
-      const dim = !this.puzzle.isUncovered(s.id) && !this.puzzle.removed[s.id];
-      const masked = this.puzzle.screws[s.id].hidden && dim;
+      const covered = !this.puzzle.isUncovered(s.id) && !this.puzzle.removed[s.id];
+      // a sticky plank in progress: every other screw waits (shown dimmed)
+      const dim = covered || (this.puzzle.isStuckBySticky(s.id) && !this.puzzle.removed[s.id]);
+      const masked = this.puzzle.screws[s.id].hidden && covered;
       if (dim === s.dim && masked === s.masked && !force) continue;
       s.dim = dim;
       s.masked = masked;
@@ -835,7 +884,11 @@ export class PuzzleView {
           break;
         }
         case 'plankFall':
-          this.tween(0.3, 0.01, () => undefined, () => this.dropPlank(e.plank));
+          this.tween(0.3, 0.01, () => undefined, () => {
+            this.dropPlank(e.plank);
+            // a short shake of the whole object as the plank lets go
+            this.tween(0, 0.25, (k) => (this.object.position.x = Math.sin(k * Math.PI * 6) * 0.035 * (1 - k)));
+          });
           break;
         case 'won':
           this.tween(1.0, 0.01, () => undefined, () => this.rescue());
@@ -881,21 +934,28 @@ export class PuzzleView {
           break;
         }
         case 'unlock': {
-          const pl = this.screws[e.screw].padlock;
-          this.screws[e.screw].padlock = undefined;
-          if (!pl) break;
+          const g = this.planks[e.plank];
+          const pl = g.userData.padlock as THREE.Group | undefined;
+          g.userData.padlock = undefined;
           this.onSound('unlock');
-          const m = pl.material as THREE.MeshBasicMaterial;
-          this.tween(0.2, 0.5, (k) => {
-            pl.position.y = 0.24 + k * 0.5;
+          // the padlock pops and the chain around the plank drops away
+          for (const c of g.children.slice()) if ((c as THREE.Mesh).geometry?.type === 'TorusGeometry') this.tween(0.15, 0.4, (k) => (c.position.y = -k * 1.5), () => c.removeFromParent());
+          if (pl) this.tween(0.2, 0.5, (k) => {
+            pl.position.z = k * 0.6;
             pl.scale.setScalar(1 + k * 0.6);
-            m.opacity = 1 - k;
+            ((pl.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 1 - k;
           }, () => pl.removeFromParent());
           break;
         }
+        case 'sticky': {
+          const goo = this.planks[e.plank].userData.goo as THREE.Mesh | undefined;
+          this.onSound('warn');
+          if (goo) this.tween(0, 0.6, (k) => ((goo.material as THREE.MeshPhysicalMaterial).emissive ?? new THREE.Color()).setHex(0x6a3a00).multiplyScalar(Math.sin(k * Math.PI)));
+          break;
+        }
         case 'lost':
-          if (e.reason === 'bomb' && e.plank !== undefined) {
-            this.explode(e.plank);
+          if (e.reason === 'bomb' && e.screw !== undefined) {
+            this.explode(this.puzzle.screws[e.screw].plank);
             break;
           }
           this.onSound('fail');
@@ -907,6 +967,20 @@ export class PuzzleView {
     }
     this.refreshDim();
     this.refreshBombs();
+    this.refreshTray();
+  }
+
+  /** Tray feedback: the free slots turn orange with one slot left (the next wrong screw fails), red pulse + sound. */
+  private refreshTray(): void {
+    const left = this.puzzle.trayFree();
+    const warn = left === 1 && this.puzzle.status === 'play';
+    if (warn && !this.trayWarn) this.onSound('warn');
+    this.trayWarn = warn;
+    this.puzzle.tray.forEach((sid, i) => {
+      const h = this.trayHoles[i];
+      if (!h) return;
+      (h.material as THREE.MeshBasicMaterial).color.setHex(warn && sid === null ? 0xff8a2a : h.userData.base);
+    });
   }
 
   /** Ice breaks into shards that tumble to the floor. */
@@ -1155,6 +1229,13 @@ export class PuzzleView {
   update(dt: number): void {
     this.now += dt;
     const t = this.now;
+    // one slot left: the free slot pulses between orange and red
+    if (this.trayWarn) {
+      const k = 0.5 + 0.5 * Math.sin(t * 9);
+      this.puzzle.tray.forEach((sid, i) => {
+        if (sid === null && this.trayHoles[i]) (this.trayHoles[i].material as THREE.MeshBasicMaterial).color.setHex(0xff8a2a).lerp(new THREE.Color(0xff2a2a), k);
+      });
+    }
     for (const tw of this.tweens.slice()) {
       if (t < tw.t0) continue;
       const k = Math.min(1, (t - tw.t0) / tw.dur);

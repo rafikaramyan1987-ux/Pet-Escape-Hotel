@@ -6,7 +6,7 @@ import { bossHat, petId, petOfLevel, type PetVariant } from '../game/collection'
 import { item } from '../game/shop';
 import { name, t } from '../game/i18n';
 import { LEVELS } from './levels';
-import { type Action, type LoseReason, Puzzle } from './model';
+import { type LoseReason, Puzzle } from './model';
 import { MECHANIC_INTRO, type Mechanic } from './mechanics';
 import { hint } from './solver';
 import { PuzzleView } from './view';
@@ -24,8 +24,6 @@ export function rewardFor(level: number, fails: number): number {
 export const ORBIT_FROM = 20;
 /** The hint bulb appears after this many fails on a level (never automatic). */
 export const HINT_AFTER = 2;
-/** Taps taken back by the "undo last 3" option on the fail card. */
-export const UNDO_ON_FAIL = 3;
 export const MAX_TRAY = 8;
 
 /**
@@ -48,12 +46,25 @@ export class Game {
   /** Autoplay bot: seconds between taps (recordings speed it up). */
   botDelay = 1.0;
   botWait = 0.9;
+  /** Autoplay taps random removable screws instead of the solver's (shows how a careless player fails). */
+  autoRandom = false;
+  private seed = 12345;
+  private rand(): number {
+    this.seed = (this.seed * 1103515245 + 12345) >>> 0;
+    return this.seed / 4294967296;
+  }
   /** Autoplay presses "Next" by itself (off for trailers, which end on the result card). */
   autoAdvance = true;
   private resultShown = false;
   private last = performance.now();
   private taps = 0;
-  /** Fails on the current level (stars, hints). */
+  /** Moves used on this level (taps, plus 2 per booster); undo does not give moves back. */
+  moves = 0;
+  /** The solver's minimum: every screw out once, ice screws take two taps. */
+  minMoves = 0;
+  /** Level whose "watch an ad for +1 slot" continue was used (once per level). */
+  adContinueLevel = -1;
+  /** Fails on the current level (hints). */
   fails = 0;
   private autoNext = 0;
   private orbit = 0;
@@ -122,6 +133,9 @@ export class Game {
     this.hammerMode = false;
     this.hintTarget = -1;
     this.taps = 0;
+    this.moves = 0;
+    this.minMoves = this.puzzle.screws.length + this.puzzle.screws.filter((x) => x.ice).length;
+    if (this.adContinueLevel !== def.id) this.adContinueLevel = -1;
     this.continued = false;
     this.usedBoosters.clear();
     this.fails = this.save.fails[String(def.id)] ?? 0;
@@ -168,10 +182,12 @@ export class Game {
       this.tap(id);
       return;
     }
-    const locked = this.view.lockedAt(p.x, p.y, p.w, p.h);
-    if (locked >= 0) {
-      this.view.wiggleLock(locked);
-      this.hud.toast(t('lockedHint'), 1.8);
+    const blocked = this.view.blockedAt(p.x, p.y, p.w, p.h);
+    if (blocked >= 0) {
+      if (this.puzzle.isLocked(blocked)) {
+        this.view.wiggleLock(blocked);
+        this.hud.toast(t('lockedHint'), 1.8);
+      } else this.hud.toast(t('stickyHint'), 1.8);
       return;
     }
     // from level 20 a drag on empty space turns the view a little (optional: every screw is reachable without it)
@@ -189,6 +205,7 @@ export class Game {
     const ev = this.puzzle.tap(id);
     if (!ev.length) return;
     this.taps++;
+    this.moves++;
     if (this.hintTarget >= 0) this.showHint(-1);
     const r = this.canvas.getBoundingClientRect();
     const sc = this.view.screenOf(id, r.width, r.height);
@@ -199,6 +216,7 @@ export class Game {
   }
 
   private afterMove(ev: ReturnType<Puzzle['tap']>): void {
+    this.hud.moves();
     for (const e of ev) {
       if (e.type === 'won') this.mode = 'won';
       if (e.type === 'lost') {
@@ -249,10 +267,19 @@ export class Game {
       this.persist();
       return true;
     }
-    const r = await this.platform.rewarded();
-    if (r === true) return true;
+    if (await this.watchAd()) return true;
     this.hud.noAd(b);
     return false;
+  }
+
+  /** Optional rewarded ad, only ever from a button the player tapped. Rewarded only if the ad really completed. */
+  async watchAd(): Promise<boolean> {
+    return (await this.platform.requestAd('rewarded')) === 'finished';
+  }
+
+  /** Stars by moves used, against the solver's minimum. */
+  starsFor(moves: number): number {
+    return moves <= this.minMoves ? 3 : moves <= this.minMoves + 3 ? 2 : 1;
   }
 
   async useBooster(b: Booster): Promise<void> {
@@ -275,6 +302,7 @@ export class Game {
     }
     if (!(await this.pay(b)) || !this.canUse(b)) return;
     this.usedBoosters.add(b);
+    this.moves += 2;
     this.audio.play('pop');
     if (b === 'slot') {
       this.view.apply(this.puzzle.addTraySlot());
@@ -294,32 +322,30 @@ export class Game {
     }
     const ev = this.puzzle.hammer(plank);
     this.usedBoosters.add('hammer');
+    this.moves += 2;
     this.view.apply(ev);
     this.buzz(30);
     this.afterMove(ev);
   }
 
   /**
-   * Fail card options (one continue per attempt): +1 tray slot (the same moves replayed with a bigger tray;
-   * only when the tray overflowed and no extra slot was used yet) or undo the last 3 taps.
+   * Fail card: "Watch an ad for +1 tray slot and continue", once per level (the same moves replayed with one more
+   * slot; only when the tray filled up and one more slot really gets you going again).
    */
-  canContinue(kind: 'slot' | 'undo'): boolean {
-    if (this.mode !== 'lost' || this.continued) return false;
-    if (kind === 'slot') {
-      if (this.lostReason !== 'tray' || this.usedBoosters.has('slot') || this.puzzle.tray.length >= MAX_TRAY) return false;
-      // only when one more slot really gets you going again (a stuck board stays stuck)
-      return Puzzle.replay(this.def, [{ t: 'slot' }, ...this.puzzle.history]).status === 'play';
-    }
-    const back = this.puzzle.undoActions(UNDO_ON_FAIL);
-    return back !== null && Puzzle.replay(this.def, back).status === 'play';
+  canContinue(): boolean {
+    if (this.mode !== 'lost' || this.lostReason !== 'tray' || this.adContinueLevel === this.def.id || this.puzzle.tray.length >= MAX_TRAY) return false;
+    return Puzzle.replay(this.def, [{ t: 'slot' }, ...this.puzzle.history]).status === 'play';
   }
 
-  async continueLevel(kind: 'slot' | 'undo'): Promise<void> {
-    if (!this.canContinue(kind) || !(await this.pay(kind))) return;
+  async continueWithAd(): Promise<void> {
+    if (!this.canContinue()) return;
+    if (!(await this.watchAd())) {
+      this.hud.noAd('continue');
+      return;
+    }
+    this.adContinueLevel = this.def.id;
     this.continued = true;
-    const actions: Action[] = kind === 'slot' ? [{ t: 'slot' }, ...this.puzzle.history] : this.puzzle.undoActions(UNDO_ON_FAIL)!;
-    if (kind === 'slot') this.usedBoosters.add('slot');
-    this.puzzle = Puzzle.replay(this.def, actions);
+    this.puzzle = Puzzle.replay(this.def, [{ t: 'slot' }, ...this.puzzle.history]);
     this.mount();
     this.mode = this.puzzle.status === 'won' ? 'won' : 'play';
     this.resultShown = false;
@@ -358,7 +384,7 @@ export class Game {
       this.platform.happytime();
       const coins = rewardFor(def.id, this.fails);
       const before = this.save.coins;
-      const stars = this.fails === 0 ? 3 : this.fails === 1 ? 2 : 1;
+      const stars = this.starsFor(this.moves);
       recordLevel(this.save, def.id, stars);
       this.save.coins = before + coins;
       const pid = petId(this.pet);
@@ -389,7 +415,9 @@ export class Game {
       this.botWait -= dt;
       if (this.botWait <= 0 && !this.view.busy()) this.botWait = 0;
       if (this.botWait <= 0) {
-        const s = hint(this.puzzle);
+        // the solver bot, or (recordings) a bot that taps a random removable screw
+        const free = this.puzzle.freeScrews();
+        const s = this.autoRandom ? (free.length ? free[Math.floor(this.rand() * free.length)] : -1) : hint(this.puzzle);
         if (s >= 0) this.tap(s);
         this.botWait = this.botDelay;
       }

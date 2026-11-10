@@ -55,7 +55,8 @@ async function boot(): Promise<void> {
   // returning players get the daily gift offered once per session (never during the first levels)
   if (!capture && !lv && game.unlocked() >= 2 && dailyStatus(save, new Date()).available) game.hud.menu('daily');
   if (tooling) {
-    game.autoplay = params.get('auto') === '1';
+    game.autoplay = params.get('auto') === '1' || params.get('auto') === 'random';
+    game.autoRandom = params.get('auto') === 'random';
     if (params.has('cover')) {
       const logo = document.createElement('div');
       logo.className = `logo cover ${params.get('cover')}`;

@@ -492,3 +492,13 @@ body { background: #f7c2a8; }
 /* the tip sits above the booster bar (levels 3+) and below the board */
 .hud .tutorial-text { bottom: calc(var(--u) * 116); font-size: calc(var(--u) * 16); }
 @media (orientation: landscape) { .hud .tutorial-text { bottom: calc(var(--u) * 20); left: calc(var(--u) * 20); translate: none; max-width: calc(var(--u) * 340); } }
+
+/* ── planning difficulty: tier badge, moves ── */
+.levelpill { position: relative; }
+.tierbadge { position: absolute; left: 50%; bottom: calc(var(--u) * -20); translate: -50% 0; white-space: nowrap; padding: calc(var(--u) * 2) calc(var(--u) * 10); border-radius: 999px; border: calc(var(--u) * 2.5) solid var(--ink); font-weight: 700; font-size: calc(var(--u) * 12); color: #fff; background: #e0383e; box-shadow: 0 0 calc(var(--u) * 10) rgba(224, 56, 62, 0.6); }
+.tierbadge.veryhard { background: linear-gradient(180deg, #b0122a, #6e0718); animation: wiggle 2s ease-in-out infinite; }
+.movespill { position: absolute; top: max(calc(var(--u) * 70), calc(env(safe-area-inset-top) + var(--u) * 56)); right: calc(var(--u) * 14); padding: calc(var(--u) * 3) calc(var(--u) * 12); gap: calc(var(--u) * 5); font-size: calc(var(--u) * 13); }
+.movespill span { font-weight: 700; color: #8a6a7a; }
+.movespill b { font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: calc(var(--u) * 20); }
+.movespill small { font-weight: 700; color: #8a6a7a; }
+.movespill.over b { color: #e0383e; }
