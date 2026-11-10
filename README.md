@@ -1,29 +1,34 @@
 # Screw & Rescue
 
-A cute 3D screw puzzle for CrazyGames. Biscuit the dog, Miso the cat and Peanut the hamster are stuck inside crates,
-cages and kennels whose fronts are covered with planks held by coloured screws. **Tap a screw**: it spins out and
-flies into the open toolbox of its colour (3 screws per box). With no matching box open, it waits in the
-**holding tray** (3 slots on levels 1–10, 4 on 11–30, 5 from 31), and a full tray fails the level. A plank falls when its last screw is out, but a screw
-under another plank can't be taken yet (it's dimmed). Clear every plank and the pet hops out.
+A cute 3D screw puzzle for CrazyGames that makes you plan. Biscuit the dog, Miso the cat and Peanut the hamster
+are stuck inside crates, cages and kennels whose fronts are covered with layered planks held by coloured screws.
+
+**Rules.** Two colour boxes are active at the top, each holds exactly 3 screws; a full box leaves and the next box of
+the queue takes its place (the next two are shown small and greyed). **Tap a screw** whose head no plank covers: it
+flies into the active box of its colour, or — if its colour has no active box — into the **holding tray** (5 slots on
+levels 1–10, 4 from 11, 3 on Very hard levels). **Tray full = level failed**; the free slot glows orange/red with a
+warning sound when only one is left. Planks fall (with a shake, a thud and dust) when their last screw is out and free
+the screws under them, so the order you take screws in is the puzzle.
 
 Built with Three.js, TypeScript and Vite. Single-file CrazyGames build, portrait-first, tap only, EN + FR.
 
-**100 levels** that need thinking, every one verified by the solver and checked in CI ([`docs/levels.md`](docs/levels.md)):
+**60 levels**, every one proven solvable without boosters by the solver and checked in CI
+([`docs/levels-report.md`](docs/levels-report.md)):
 
-- **No mindless tapping.** Random tapping (300 games per level) fails 15–30 % on levels 1–5, 30–50 % on 6–10,
-  50–70 % on 11–30 and 70–90 % from 31; bosses (every 10th) fail ≥ 90 % and are followed by an easier level.
-  Every level stays solvable, and its best-peak margin is at most 1: even the perfect order needs the tray.
-- **Levels 1–5 each bring one idea** with a one-line tip (tutorial hand on level 1 only): the colour the toolbox
-  needs, the toolbox queue (the next 2 colours show from level 2), screws under planks, three colours and crossed
-  planks, then a first mini-boss.
-- **Mechanics**, each with a one-screen tip on its first level, then mixed in: ice (8, two taps), hidden "?" screws
-  (14), chained planks (20, fall together), lock and key (30), bomb planks with a tap countdown (40) and a sticky
-  tray slot that takes one colour (55). Levels use 2–6 colours and 1–5 layers.
-- **Tray full!** Retry instantly, or one continue per level: +1 slot (only when it really helps) or undo the last
-  3 taps (booster, coins or an optional rewarded ad). Each booster (undo, +1 slot, hammer) works once per attempt.
-  The **hint** bulb appears after 2 fails on a level and is never automatic.
-- From level 20, dragging on empty space turns the view a little (never needed to solve a level).
-- **Menu**: the pet collection (18 pets, freed by levels), a shop with live try-on (hats, collars), a daily gift (offered to returning players) and settings (sound, music, vibration, EN/FR). Boss levels also give a hat.
+- **Curve**: 1–2 tutorial with a hand pointer; 3–10 easy, each with a trap and at least two real decisions; from 11 a
+  sawtooth — four normal levels, then a **Hard level** (red badge), and every 10th level **Very hard** (3-slot tray).
+- **Traps**: from level 3 every level has a screw in plain sight whose colour has no active box; tapping it before its
+  box comes clogs the tray and makes the level unwinnable.
+- **Random-tapping bot** (1000 games per level): easy 40–70 % fail, normal 70–90 %, Hard 90–98 %, Very hard ≥ 98 %. No
+  level can be cleared by tapping in any order. Levels take 12–36 moves (30–90 s).
+- **Mechanics**, each with a one-screen tip the first time, then mixed in: locked plank (5, its key screw first), ice
+  (9, two taps), hidden colour "?" (13), chain (18, both planks freed before either falls), bomb screw (25, countdown on
+  the screw), sticky plank (35, all its screws in one go). Plank widths and four plank looks vary from level to level.
+- **Moves counter** and **3 stars** by moves used against the solver's minimum.
+- **Boosters**: undo, +1 tray slot, hammer — one of each to start, more with coins or a rewarded ad from a button the
+  player taps (rewarded only if the ad really completed). **Tray full**: Retry, or "Watch an ad for +1 tray slot and
+  continue" once per level. Hints (the solver's next screw) after 2 fails.
+- **Menu**: the pet collection (18 pets), a shop with live try-on (hats, collars), a daily gift and settings (sound, music, vibration, EN/FR).
 
 ## Development
 
@@ -31,7 +36,7 @@ Built with Three.js, TypeScript and Vite. Single-file CrazyGames build, portrait
 npm install
 npm run dev                  # the game
 npm run check                # lint + typecheck + unit tests
-npm run audit                # exhaustive solver over every level → docs/levels.md (CI fails on any problem)
+npm run audit                # solver + random bot over every level → docs/levels-report.md (CI fails on any problem)
 npm run build                # GitHub Pages build → dist/
 npm run build:crazygames     # one self-contained index.html → dist-crazygames/
 npm run levels               # regenerate the levels (seeded, tuned to their bands) → src/puzzle/levels.json
@@ -40,7 +45,7 @@ npm run e2e                  # Playwright (390 px): real taps on level 1, the bo
 node scripts/submission.mjs zip      # submission/screw-and-rescue-v1.zip (index.html inside screw-and-rescue-v1/)
 node scripts/submission.mjs covers   # submission/cover-1920x1080|800x1200|800x800.png (after npm run build)
 node scripts/trailer.mjs landscape   # submission/trailer-1920x1080.mp4 (portrait → trailer-1080x1620.mp4), real gameplay
-node scripts/record.mjs              # docs/art/levels-1-10-390x844.mp4 (the solver bot playing, 390×844)
+node scripts/record-difficulty.mjs   # docs/art/difficulty-v2-390x844.mp4 (solver clears 1, 3, 5, 9, 11, 15, 20; random taps fail)
 ```
 
 Web build tooling: `?level=4` opens a level, `?auto=1` lets the solver bot play, `?capture=1` gives frame-exact
@@ -50,10 +55,11 @@ control through `window.__game`, and `?cover=landscape|portrait|square` adds the
 
 | Path | What |
 |---|---|
-| `src/puzzle/model.ts` | Pure rules: planks, screws, layers and covering, toolbox queue (3 per box), tray, ice, hidden screws, chains, locks, bombs, sticky slot, win/lose events (with the reason) |
+| `src/puzzle/model.ts` | Pure rules: layered planks (widths, looks), covered screws, two active boxes and the queue (3 per box), tray (full = fail), locked planks, ice, hidden colours, chains, bomb screws, sticky planks, win/lose events |
+| `src/puzzle/solver.ts` | Exhaustive search with state hashing: best tray peak (hints, bot) and `analyze()` — solvable, minimum moves, trap first moves, trap screws, decisions |
 | `src/puzzle/solver.ts` | Exhaustive solver over the state graph. **Best peak**: the fewest tray slots any winning order needs (hints, bot). **Worst peak / can fail**: what any order of taps can reach |
-| `src/puzzle/levels.ts`, `generate.ts` | Seeded generator: a layout (hand-drawn templates for levels 2, 4 and 5), then a local search over the colouring and toolbox queue until the level lands in its band (random-tap fail rate, best-peak margin ≤ 1), plus the mechanics of its stage. The solver proves every level |
-| `scripts/audit.ts` | CI audit: validity, solver (time limit per level), best-path replay, the playtest bot, random-tap fail rate and margin against each stage's band, tray size, mechanics order, solution length → `docs/levels.md` |
+| `src/puzzle/levels.ts`, `generate.ts`, `mechanics.ts` | Seeded generator: a random layered layout, the mechanics of its level, then a local search over colours and box queue until the solver and the random bot put the level inside its tier's targets |
+| `scripts/audit.ts` | CI audit: solvable, minimum moves, trap first moves, traps, decisions, random-bot fail rate (1000 games) against each tier's target, tray, mechanics order, ≥ 60 levels → `docs/levels-report.md` |
 | `src/puzzle/view.ts` | 3D view: object + pet, planks, screws with colour-blind symbols, toolboxes, tray, spin-out and flight, lid close, plank physics with dust, pet rescue with confetti |
 | `src/puzzle/game.ts` | Controller: generous tap picking (52 px+ targets), tutorial hand, boosters, continue, hints, view turn, results, collection, saves, CrazyGames events |
 | `src/ui/hud.ts`, `src/game/` | HUD, result/fail cards, menu panels (pets, shop, daily, settings). Saves, collection, shop, EN/FR strings |
