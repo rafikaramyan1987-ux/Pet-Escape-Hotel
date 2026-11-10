@@ -36,6 +36,9 @@ if (process.argv[2] === 'seg') {
   page.on('pageerror', (e) => console.error('pageerror', e.message));
   await page.goto(`http://localhost:${PORT}/?capture=1&q=low&level=${level}&auto=${bot === 'random' ? 'random' : '1'}`);
   await page.waitForFunction(() => window.__game, null, { timeout: 120000 });
+  // headless software rendering stalls on the blurred dialog backdrop over the tutorial tip: hide the tip behind
+  // dialogs in the recording (players see the tip blurred behind the card; nothing else changes)
+  await page.addStyleTag({ content: '#ui:has(.overlay) .tutorial-text { display: none; }' });
   await page.evaluate(([cap, random]) => {
     const g = window.__game.game;
     g.botDelay = random ? 0.55 : 0.7;
