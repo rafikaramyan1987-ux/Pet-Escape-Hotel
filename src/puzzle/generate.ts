@@ -1,6 +1,6 @@
 import type { PetKind } from '../art/pets';
 import { MECHANIC_INTRO, type Mechanic, type Tier, tierOf, trayOf } from './mechanics';
-import { BOX_SIZE, COLORS, type Color, type LevelDef, type ObjectKind, OPEN_BOXES, Puzzle, type PlankSpec, buildLevel, plankCovers, plankWidth, validateLevel } from './model';
+import { BOX_SIZE, COLORS, type Color, type LevelDef, type ObjectKind, OPEN_BOXES, Puzzle, type PlankSpec, type PlankStyle, buildLevel, plankCovers, plankWidth, validateLevel } from './model';
 import { analyze } from './solver';
 
 export { MECHANIC_INTRO, type Mechanic, tierOf, trayOf } from './mechanics';
@@ -24,18 +24,30 @@ export interface Target {
   decisions: number;
   /** Winning line length (taps): 30–90 s of real play at ~2.5 s per tap. */
   moves: [number, number];
+  /** The first decision on the winning line must come by this tap (0 = no limit): you think from the first taps. */
+  firstDecision: number;
+  /** "Obvious" bot (always a screw that flies straight into its box when there is one): at least this fail rate. */
+  greedyFail: number;
 }
+
+/** Levels 3–10: a real decision within the first taps, and playing the "obvious" screws is not enough. */
+export const EARLY_FIRST_DECISION = 4;
+export const EARLY_GREEDY_FAIL = 0.25;
 
 export function targetFor(id: number): Target {
   const tier = tierOf(id);
   const fail: Record<Tier, [number, number]> = {
     tutorial: [0.03, 0.35],
-    easy: [0.4, 0.7],
+    easy: [0.6, 0.9],
     normal: [0.7, 0.9],
     hard: [0.9, 0.98],
     veryhard: [0.98, 1],
   };
-  return { tier, tray: trayOf(id), fail: fail[tier], traps: id >= 3 ? 1 : 0, decisions: id >= 3 ? 2 : 0, moves: [12, 36] };
+  const early = tier === 'easy';
+  return {
+    tier, tray: trayOf(id), fail: fail[tier], traps: id >= 3 ? 1 : 0, decisions: id >= 3 ? 2 : 0, moves: [12, 36],
+    firstDecision: early ? EARLY_FIRST_DECISION : 0, greedyFail: early ? EARLY_GREEDY_FAIL : 0,
+  };
 }
 
 export interface Band {
@@ -50,7 +62,8 @@ export interface Band {
 
 export function bandFor(n: number): Band {
   const tg = targetFor(n);
-  const inner: [number, number] = tg.tier === 'veryhard' ? [0.985, 1] : [tg.fail[0] + 0.02, tg.fail[1] - 0.02];
+  // easy levels aim at the low end of their band, so they stay a step below the normal levels
+  const inner: [number, number] = tg.tier === 'veryhard' ? [0.985, 1] : tg.tier === 'easy' ? [0.62, 0.8] : [tg.fail[0] + 0.02, tg.fail[1] - 0.02];
   const late = n > 30;
   const b: Record<Tier, Band> = {
     tutorial: { colors: [2, 3], planks: [3, 4], layers: [2, 2], screws: [12, 15], fail: inner },
@@ -109,28 +122,83 @@ function overlaps(a: PlankSpec, b: PlankSpec): boolean {
 
 const pick = (r: () => number, [a, b]: [number, number]) => a + Math.floor(r() * (b - a + 1));
 
-export function makeLayout(r: () => number, band: Band): PlankSpec[] | null {
+/**
+ * Layout patterns for the first levels, so each one looks different: the direction of the planks on the bottom
+ * layer and on the layers above.
+ */
+export type Pattern = 'random' | 'ladder' | 'gate' | 'cross' | 'fan' | 'zigzag' | 'grid' | 'star';
+
+/** The look of levels 3–10: layout pattern, plank shapes (styles), paint, widths and the screw palette. */
+export interface EarlyLook {
+  pattern: Pattern;
+  styles: PlankStyle[];
+  tints: number[];
+  widths: number[];
+  /** Screw colours this level draws from (first ones first). */
+  palette: Color[];
+}
+
+export const EARLY_LOOKS: Record<number, EarlyLook> = {
+  3: { pattern: 'ladder', styles: [0], tints: [0], widths: [0.9], palette: ['red', 'blue', 'yellow', 'green'] },
+  4: { pattern: 'cross', styles: [1], tints: [1, 3], widths: [0.56, 0.72], palette: ['purple', 'orange', 'teal', 'pink'] },
+  5: { pattern: 'gate', styles: [4], tints: [2, 4], widths: [0.72], palette: ['green', 'yellow', 'red', 'purple'] },
+  6: { pattern: 'fan', styles: [2], tints: [3], widths: [0.72, 0.9], palette: ['blue', 'pink', 'orange', 'green'] },
+  7: { pattern: 'zigzag', styles: [5], tints: [4, 0], widths: [0.72, 0.9], palette: ['teal', 'red', 'yellow', 'purple'] },
+  8: { pattern: 'grid', styles: [3, 1], tints: [0, 2], widths: [0.56, 0.72], palette: ['orange', 'blue', 'green', 'pink'] },
+  9: { pattern: 'star', styles: [4, 0], tints: [1, 4], widths: [0.72], palette: ['pink', 'teal', 'purple', 'yellow'] },
+  10: { pattern: 'random', styles: [5, 2], tints: [3, 2], widths: [0.56, 0.9], palette: ['yellow', 'red', 'blue', 'teal'] },
+};
+
+const diag = (r: () => number, lo: number, hi: number, sign: number) => sign * (lo + r() * (hi - lo));
+
+/** Plank angle for a pattern (degrees). `i` = index of the plank in its layer. */
+function patternAngle(pt: Pattern, r: () => number, layer: number, i: number): number {
+  const alt = i % 2 ? -1 : 1;
+  switch (pt) {
+    case 'ladder':
+      return layer === 0 ? 0 : 90;
+    case 'gate':
+      return layer === 0 ? 90 : 0;
+    case 'cross':
+      return layer === 0 ? diag(r, 24, 34, alt) : r() < 0.5 ? 0 : 90;
+    case 'fan':
+      return diag(r, 22, 42, layer % 2 ? -alt : alt);
+    case 'zigzag':
+      return layer === 0 ? diag(r, 16, 26, alt) : 90;
+    case 'grid':
+      return (i + layer) % 2 ? 90 : 0;
+    case 'star':
+      return layer === 0 ? 0 : diag(r, 34, 44, alt);
+    default: {
+      const kind = r();
+      if (layer === 0) return kind < 0.55 ? 0 : kind < 0.85 ? 90 : (r() < 0.5 ? 1 : -1) * (20 + r() * 15);
+      return kind < 0.35 ? 0 : kind < 0.6 ? 90 : (r() < 0.5 ? 1 : -1) * (22 + r() * 18);
+    }
+  }
+}
+
+export function makeLayout(r: () => number, band: Band, look?: EarlyLook): PlankSpec[] | null {
   const n = pick(r, band.planks);
   const layers = Math.min(n, pick(r, band.layers));
   const planks: PlankSpec[] = [];
   let guard = 0;
   while (planks.length < n && guard++ < 1500) {
     const layer = Math.min(layers - 1, Math.floor((planks.length * layers) / n));
-    // layer 0: bars; higher layers: crossing bars and diagonals over them
-    const kind = r();
-    let angle: number;
-    if (layer === 0) angle = kind < 0.55 ? 0 : kind < 0.85 ? 90 : (r() < 0.5 ? 1 : -1) * (20 + r() * 15);
-    else angle = kind < 0.35 ? 0 : kind < 0.6 ? 90 : (r() < 0.5 ? 1 : -1) * (22 + r() * 18);
+    // layer 0: bars; higher layers: crossing bars and diagonals over them (or the early level's pattern)
+    const angle = patternAngle(look?.pattern ?? 'random', r, layer, planks.filter((q) => q.layer === layer).length);
     const vertical = Math.abs(angle) > 60;
     const maxLen = vertical ? 2.75 : Math.abs(angle) > 5 ? 3.6 : 3.4;
     const len = Math.round((1.7 + r() * (maxLen - 1.7)) * 10) / 10;
     const screws = len < 1.9 ? 2 : len < 2.6 ? 2 + Math.floor(r() * 2) : 3 + Math.floor(r() * 2);
-    const w = WIDTHS[Math.floor(r() * WIDTHS.length)];
+    const widths = look?.widths ?? WIDTHS;
+    const w = widths[Math.floor(r() * widths.length)];
+    const tint = look ? look.tints[planks.length % look.tints.length] : Math.floor(r() * 5);
+    const style = look ? look.styles[planks.length % look.styles.length] : (Math.floor(r() * 4) as PlankStyle);
     const p: PlankSpec = {
       x: Math.round((r() * 2 - 1) * (HALF_W - (vertical ? 0.4 : 0.6)) * 20) / 20,
       y: Math.round((r() * 2 - 1) * (HALF_H - (vertical ? 0.2 : 0.4)) * 20) / 20,
       len, angle: Math.round(angle), layer, screws: new Array(Math.min(4, screws)).fill('red'),
-      w, tint: Math.floor(r() * 5), style: Math.floor(r() * 4) as PlankSpec['style'],
+      w, tint, style,
     };
     if (w === 0.72) delete p.w;
     if (!plankInside(p)) continue;
@@ -214,11 +282,11 @@ export function fitScrews(planks: PlankSpec[], lo: number, hi: number): boolean 
 }
 
 /** Colour the screws and build the box queue (the palette changes from level to level). */
-export function colorize(r: () => number, planks: PlankSpec[], colors: number): Color[] | null {
+export function colorize(r: () => number, planks: PlankSpec[], colors: number, from?: Color[]): Color[] | null {
   const total = planks.reduce((s, p) => s + p.screws.length, 0);
   const boxes = total / BOX_SIZE;
   if (boxes < colors) return null;
-  const palette = shuffle(r, COLORS.slice(0, 8) as Color[]).slice(0, colors);
+  const palette = from ? from.slice(0, colors) : shuffle(r, COLORS.slice(0, 8) as Color[]).slice(0, colors);
   const perColor = palette.map(() => 1);
   for (let i = colors; i < boxes; i++) perColor[Math.floor(r() * colors)]++;
   const bag: Color[] = [];
@@ -354,7 +422,11 @@ export function score(def: LevelDef, band: Band, games: number): { score: number
   if (a.trapScrews.length < tg.traps) tPen = 0.5;
   const dPen = Math.max(0, tg.decisions - a.decisions) * 0.15;
   const mPen = a.minMoves < tg.moves[0] || a.minMoves > tg.moves[1] ? 1 : 0;
-  return { score: fPen * 4 + tPen + dPen + mPen, fail };
+  // early levels: the first decision comes within the first taps, and the "obvious" bot must fail often enough
+  let ePen = 0;
+  if (tg.firstDecision) ePen += a.firstDecision === 0 ? 0.6 : Math.max(0, a.firstDecision - tg.firstDecision) * 0.08;
+  if (tg.greedyFail) ePen += Math.max(0, tg.greedyFail - greedyFailRate(def, games, 13)) * 2;
+  return { score: fPen * 4 + tPen + dPen + mPen + ePen, fail };
 }
 
 /**
@@ -397,6 +469,27 @@ export function tuneColors(r: () => number, def: LevelDef, band: Band, iters: nu
   return cur.score === 0;
 }
 
+/**
+ * "Obvious" bot: always taps a screw that goes straight into an active box when there is one (else any free
+ * screw). Its failure rate shows how often the obvious move is the wrong one.
+ */
+export function greedyFailRate(def: LevelDef, games = 1000, seed = 5): number {
+  const r = rng(seed);
+  let fails = 0;
+  for (let g = 0; g < games; g++) {
+    const p = new Puzzle(def);
+    while (p.status === 'play') {
+      const free = p.freeScrews();
+      if (!free.length) break;
+      const obvious = free.filter((s) => !p.iced[s] && p.boxFor(p.screws[s].color) >= 0);
+      const pool = obvious.length ? obvious : free;
+      p.tap(pool[Math.floor(r() * pool.length)]);
+    }
+    if (p.status !== 'won') fails++;
+  }
+  return fails / games;
+}
+
 /** Random-tapping bot failure rate (a random removable screw each tap; fixed seed: the audit reproduces it). */
 export function randomFailRate(def: LevelDef, games = 1000, seed = 7): number {
   const r = rng(seed);
@@ -418,7 +511,8 @@ export function generateLevel(n: number, seed = n * 7919, maxTries = 3000): Gene
   const tg = targetFor(n);
   const r = rng(seed);
   for (let tries = 1; tries <= maxTries; tries++) {
-    const planks = makeLayout(r, band);
+    const look = EARLY_LOOKS[n];
+    const planks = makeLayout(r, band, look);
     if (!planks) {
       rej('layout');
       continue;
@@ -428,7 +522,7 @@ export function generateLevel(n: number, seed = n * 7919, maxTries = 3000): Gene
       continue;
     }
     center(planks);
-    const queue = colorize(r, planks, pick(r, band.colors));
+    const queue = colorize(r, planks, pick(r, band.colors), look?.palette);
     if (!queue) {
       rej('colours');
       continue;
@@ -464,6 +558,14 @@ export function generateLevel(n: number, seed = n * 7919, maxTries = 3000): Gene
     const a = analyze(new Puzzle(def), 600_000);
     if (!a.complete || !a.solvable || a.trapScrews.length < tg.traps || a.decisions < tg.decisions || a.minMoves < tg.moves[0] || a.minMoves > tg.moves[1]) {
       rej('verify');
+      continue;
+    }
+    if (tg.firstDecision && (a.firstDecision === 0 || a.firstDecision > tg.firstDecision)) {
+      rej('late decision');
+      continue;
+    }
+    if (greedyFailRate(def) < tg.greedyFail) {
+      rej('obvious wins');
       continue;
     }
     const failRate = randomFailRate(def);

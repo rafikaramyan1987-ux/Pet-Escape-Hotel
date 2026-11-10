@@ -24,9 +24,11 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - name: Unit tests (puzzle rules, solver, levels, ads settle-once, saves, i18n)
+      - name: Unit tests (puzzle rules, solver, levels, ads settle-once, GD / GamePix adapters, saves, i18n)
         run: npm test
-      - name: Level audit → docs/levels-report.md (solvable, random-bot fail rate in tier band, traps, decisions, moves, time limit)
+      - name: Every language file has all English keys (10 languages)
+        run: npm run check:i18n
+      - name: Level audit → docs/levels-report.md (solvable, random-bot fail rate in tier band, traps, decisions, first decision, obvious bot, variety, moves)
         run: npm run audit
       - name: Build (web / GitHub Pages)
         run: npm run build
@@ -39,16 +41,32 @@ jobs:
           size=$(du -sb dist | cut -f1)
           echo "dist size: $size bytes"
           test "$size" -lt 5000000
-      - name: Playwright e2e (390px, web + CrazyGames builds)
+      - name: Playwright e2e (390px, web / CrazyGames / GameDistribution / GamePix builds, text fits in every language)
         run: |
           npx playwright install --with-deps chromium
-          npm run e2e
-      - name: Build CrazyGames package
-        run: npm run build:crazygames
-      - name: CrazyGames package is one self-contained file (no asset that can go missing)
+          npm run e2e -- --trace off
+      - name: Build every platform (web, crazygames, gd, gamepix)
+        run: npm run build:web && npm run build:crazygames && npm run build:gd && npm run build:gamepix
+      - name: Portal packages are one self-contained file each (no asset that can go missing)
         run: |
-          test "$(find dist-crazygames -type f)" = "dist-crazygames/index.html"
-          ! grep -qE 'crossorigin|rel="manifest"|src="\./assets|href="\./' dist-crazygames/index.html
+          for p in crazygames gd gamepix; do
+            test "$(find dist-$p -type f)" = "dist-$p/index.html"
+            ! grep -qE 'crossorigin|rel="manifest"|src="\./assets|href="\./' dist-$p/index.html
+          done
+      - name: Each build only has its own SDK (no other platform's SDK strings)
+        run: |
+          ! grep -qiE 'crazygames|gamedistribution|gamepix|gdsdk' dist/assets/*.js dist/index.html
+          ! grep -qiE 'gamedistribution|gamepix|gdsdk' dist-crazygames/index.html
+          ! grep -qiE 'crazygames|gamepix' dist-gd/index.html
+          ! grep -qiE 'crazygames|gamedistribution|gdsdk' dist-gamepix/index.html
+      - name: Fresh GD / GamePix zips from this build pass the zip checks (index.html at the root, right SDK, nothing else)
+        run: |
+          mkdir -p ci-zips
+          zip -j -9 -X -q ci-zips/screw-and-rescue-gd-v1.zip dist-gd/index.html
+          zip -j -9 -X -q ci-zips/screw-and-rescue-gamepix-v1.zip dist-gamepix/index.html
+          node scripts/check-zips.mjs ci-zips/screw-and-rescue-gd-v1.zip ci-zips/screw-and-rescue-gamepix-v1.zip
+      - name: Committed zips (GD, GamePix, CrazyGames v2) pass the zip checks
+        run: npm run check:zips
       - name: CrazyGames package limits (< 50 MB, < 1500 files)
         run: |
           size=$(du -sb dist-crazygames | cut -f1)
@@ -68,7 +86,15 @@ jobs:
           test "$(unzip -Z1 submission/screw-and-rescue-v1.zip | grep -v '/$')" = "screw-and-rescue-v1/index.html"
           unzip -p submission/screw-and-rescue-v1.zip screw-and-rescue-v1/index.html | grep -q 'sdk.crazygames.com/crazygames-sdk-v3.js'
           ! unzip -p submission/screw-and-rescue-v1.zip screw-and-rescue-v1/index.html | grep -qE 'src="\./assets|rel="manifest"'
-      - name: Submission folder (covers, trailers ≤ 20 s, README sections)
+      - name: Upload GD and GamePix builds
+        uses: actions/upload-artifact@v7
+        with:
+          name: screw-and-rescue-gd-gamepix
+          path: |
+            dist-gd/
+            dist-gamepix/
+          if-no-files-found: error
+      - name: Submission folders (CrazyGames covers / trailers / README, GD thumbnails, GamePix icon / cover / README)
         run: python3 scripts/check-submission.py
       # GitHub Pages only accepts deployments from the default branch (environment protection rules)
       - name: Upload Pages artifact

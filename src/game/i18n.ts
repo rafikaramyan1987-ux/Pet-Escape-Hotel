@@ -1,203 +1,42 @@
-/** EN / FR strings. The browser language picks the default; the player can switch in settings. */
-export type Lang = 'en' | 'fr';
+/**
+ * Strings: one JSON file per language in src/i18n (English is the reference, every file has all its keys — checked
+ * by tests/i18n.test.ts and `npm run check:i18n` in CI). The language comes from the player's saved choice, else
+ * the platform locale (GamePix.lang(), the CrazyGames SDK) or the browser language, else English.
+ */
+import de from '../i18n/de.json';
+import en from '../i18n/en.json';
+import es from '../i18n/es.json';
+import fr from '../i18n/fr.json';
+import it from '../i18n/it.json';
+import nl from '../i18n/nl.json';
+import pl from '../i18n/pl.json';
+import pt from '../i18n/pt.json';
+import ru from '../i18n/ru.json';
+import tr from '../i18n/tr.json';
 
-const en = {
-  level: 'Level {n}',
-  play: 'Play',
-  next: 'Next level',
-  retry: 'Try again',
-  settings: 'Settings',
-  sound: 'Sound',
-  music: 'Music',
-  vibration: 'Vibration',
-  language: 'Language',
-  on: 'On',
-  off: 'Off',
-  close: 'Close',
-  rescuedTitle: 'Rescued!',
-  rescued: '{pet} is free!',
-  coins: '+{n} coins',
-  failTitle: 'No space left!',
-  failText: 'Every slot is taken. Take screws whose box is open first, and watch the grey boxes coming next.',
-  tapHint: 'Tap a screw!',
-  tapHint2: 'Screws fly into the toolbox of the same colour',
-  covered: 'Free the screws on top first',
-  moreSoon: 'More levels are on the way!',
-  noAd: 'No ad available right now, try later',
-  controls: 'Tap a screw to take it out · Fill the toolboxes · Free the pet',
-  menu: 'Menu',
-  resume: 'Resume',
-  collection: 'Pets',
-  collectionTitle: 'My pets',
-  petsCount: '{n} / {m} pets freed',
-  shop: 'Shop',
-  daily: 'Daily gift',
-  dailyText: 'Come back every day: the gift grows with your streak.',
-  dayN: 'Day {n}',
-  claim: 'Claim',
-  claimed: 'See you tomorrow!',
-  hats: 'Hats',
-  collars: 'Collars',
-  buy: 'Buy',
-  equip: 'Wear',
-  equipped: 'Worn',
-  notEnough: 'Not enough coins',
-  boosterSlot: '+1 slot',
-  boosterUndo: 'Undo',
-  boosterHammer: 'Hammer',
-  hammerHint: 'Tap a plank to smash it',
-  nothingToUndo: 'Nothing to undo yet',
-  watchAd: 'Free with an ad',
-  continueSlot: 'Continue (+1 slot)',
-  hint: 'Hint',
-  hintReady: 'Stuck? Tap the bulb for a hint',
-  rotateHint: 'Drag to turn the view',
-  newPet: 'New pet for your collection!',
-  newHat: 'New hat: {hat}',
-  locked: 'Not freed yet',
-  bossLevel: 'Tricky level!',
-  tip1: 'Tap a screw whose colour has a box at the top',
-  tip2: 'A screw under a plank is stuck: free the plank on top first',
-  tip3: 'Careful! A screw with no box waits in the tray — a full tray loses',
-  tip4: 'The grey boxes come next: plan ahead',
-  tip5: 'Mini-boss! Keep a tray slot free',
-  newMechanic: 'New!',
-  gotIt: 'Got it',
-  mIceTitle: 'Ice',
-  mIceText: 'An ice screw needs 2 taps: the first cracks the ice, the second takes it out.',
-  mHiddenTitle: 'Mystery screw',
-  mHiddenText: 'A ? screw shows its colour only when the plank above it falls.',
-  mChainTitle: 'Chained planks',
-  mChainText: 'Two chained planks fall together, only when both have lost all their screws.',
-  mLockTitle: 'Locked plank',
-  mLockText: 'A locked plank\'s screws can\'t be taken until its key screw (same symbol) is out.',
-  mBombTitle: 'Bomb screw',
-  mBombText: 'Take the bomb screw out before its countdown reaches 0 — every tap counts!',
-  mStickyTitle: 'Sticky plank',
-  mStickyText: 'Once you touch a sticky plank, take all its screws in one go: no other screw until it falls.',
-  lockedHint: 'Locked! Take out the key screw first',
-  trayFull: 'Tray full!',
-  boomTitle: 'Boom!',
-  boomText: 'The bomb screw had to come out before its countdown ran out.',
-  stuckTitle: 'No moves left!',
-  stuckText: 'Every screw left is blocked. Try another order.',
-  plusSlot: '+1 slot',
-  undo3: 'Undo last 3',
-  oneContinue: 'One rescue per level',
-  hardLevel: 'Hard level',
-  veryHardLevel: 'Very hard',
-  moves: 'Moves',
-  adContinue: 'Watch an ad for +1 tray slot and continue',
-  stickyHint: 'Finish the sticky plank first',
-  dog: 'Biscuit',
-  cat: 'Miso',
-  hamster: 'Peanut',
-};
+export const LANGS = ['en', 'fr', 'de', 'it', 'es', 'pt', 'nl', 'pl', 'tr', 'ru'] as const;
+export type Lang = (typeof LANGS)[number];
 
 type Dict = typeof en;
-
-const fr: Dict = {
-  level: 'Niveau {n}',
-  play: 'Jouer',
-  next: 'Niveau suivant',
-  retry: 'Réessayer',
-  settings: 'Réglages',
-  sound: 'Son',
-  music: 'Musique',
-  vibration: 'Vibration',
-  language: 'Langue',
-  on: 'Oui',
-  off: 'Non',
-  close: 'Fermer',
-  rescuedTitle: 'Sauvé !',
-  rescued: '{pet} est libre !',
-  coins: '+{n} pièces',
-  failTitle: 'Plus de place !',
-  failText: 'Toutes les cases sont prises. Prends d’abord les vis dont la boîte est ouverte, et regarde les boîtes grises suivantes.',
-  tapHint: 'Touche une vis !',
-  tapHint2: 'Les vis vont dans la boîte à outils de la même couleur',
-  covered: 'Libère d’abord les vis du dessus',
-  moreSoon: 'D’autres niveaux arrivent bientôt !',
-  noAd: 'Pas de pub disponible pour le moment, réessaie plus tard',
-  controls: 'Touche une vis pour la retirer · Remplis les boîtes · Libère l’animal',
-  menu: 'Menu',
-  resume: 'Reprendre',
-  collection: 'Animaux',
-  collectionTitle: 'Mes animaux',
-  petsCount: '{n} / {m} animaux libérés',
-  shop: 'Boutique',
-  daily: 'Cadeau du jour',
-  dailyText: 'Reviens chaque jour : le cadeau grandit avec ta série.',
-  dayN: 'Jour {n}',
-  claim: 'Récupérer',
-  claimed: 'À demain !',
-  hats: 'Chapeaux',
-  collars: 'Colliers',
-  buy: 'Acheter',
-  equip: 'Porter',
-  equipped: 'Porté',
-  notEnough: 'Pas assez de pièces',
-  boosterSlot: '+1 case',
-  boosterUndo: 'Annuler',
-  boosterHammer: 'Marteau',
-  hammerHint: 'Touche une planche pour la casser',
-  nothingToUndo: 'Rien à annuler pour l’instant',
-  watchAd: 'Gratuit avec une pub',
-  continueSlot: 'Continuer (+1 case)',
-  hint: 'Indice',
-  hintReady: 'Bloqué ? Touche l’ampoule pour un indice',
-  rotateHint: 'Glisse pour tourner la vue',
-  newPet: 'Nouvel animal dans ta collection !',
-  newHat: 'Nouveau chapeau : {hat}',
-  locked: 'Pas encore libéré',
-  bossLevel: 'Niveau difficile !',
-  tip1: 'Touche une vis dont la couleur a une boîte en haut',
-  tip2: 'Une vis sous une planche est bloquée : libère d’abord la planche du dessus',
-  tip3: 'Attention ! Une vis sans boîte attend dans le plateau — plateau plein, c’est perdu',
-  tip4: 'Les boîtes grises arrivent ensuite : anticipe',
-  tip5: 'Mini-boss ! Garde une case du plateau libre',
-  newMechanic: 'Nouveau !',
-  gotIt: 'Compris',
-  mIceTitle: 'Glace',
-  mIceText: 'Une vis gelée demande 2 touchers : le premier casse la glace, le second la retire.',
-  mHiddenTitle: 'Vis mystère',
-  mHiddenText: 'Une vis ? ne montre sa couleur que quand la planche au-dessus tombe.',
-  mChainTitle: 'Planches enchaînées',
-  mChainText: 'Deux planches enchaînées tombent ensemble, seulement quand les deux n’ont plus de vis.',
-  mLockTitle: 'Planche cadenassée',
-  mLockText: 'Les vis d’une planche cadenassée sont bloquées tant que sa vis-clé (même symbole) n’est pas retirée.',
-  mBombTitle: 'Vis bombe',
-  mBombText: 'Retire la vis bombe avant que son compte à rebours atteigne 0 — chaque toucher compte !',
-  mStickyTitle: 'Planche collante',
-  mStickyText: 'Dès que tu touches une planche collante, retire toutes ses vis d’un coup : aucune autre vis avant qu’elle tombe.',
-  lockedHint: 'Cadenassée ! Retire d’abord la vis-clé',
-  trayFull: 'Plateau plein !',
-  boomTitle: 'Boum !',
-  boomText: 'La vis bombe devait être retirée avant la fin du compte à rebours.',
-  stuckTitle: 'Plus de coups !',
-  stuckText: 'Toutes les vis restantes sont bloquées. Essaie un autre ordre.',
-  plusSlot: '+1 case',
-  undo3: 'Annuler les 3 derniers',
-  oneContinue: 'Un sauvetage par niveau',
-  hardLevel: 'Niveau difficile',
-  veryHardLevel: 'Très difficile',
-  moves: 'Coups',
-  adContinue: 'Regarder une pub : +1 case et continuer',
-  stickyHint: 'Termine d’abord la planche collante',
-  dog: 'Biscuit',
-  cat: 'Miso',
-  hamster: 'Cacahuète',
-};
-
-const dicts: Record<Lang, Dict> = { en, fr };
-let lang: Lang = 'en';
-
 export type Key = keyof Dict;
 
-export function detectLang(saved: string): Lang {
-  if (saved === 'en' || saved === 'fr') return saved;
-  const nav = (typeof navigator !== 'undefined' ? navigator.language : 'en').toLowerCase();
-  return nav.startsWith('fr') ? 'fr' : 'en';
+const dicts: Record<Lang, Dict> = { en, fr, de, it, es, pt, nl, pl, tr, ru };
+let lang: Lang = 'en';
+
+const isLang = (l: string): l is Lang => (LANGS as readonly string[]).includes(l);
+
+/** "pt-BR" → "pt"; unknown → null. */
+export function langOf(code: string | null | undefined): Lang | null {
+  if (!code) return null;
+  const l = code.toLowerCase().split(/[-_]/)[0];
+  return isLang(l) ? l : null;
+}
+
+/** Saved choice, else the platform locale, else the browser language, else English. */
+export function detectLang(saved: string, platformLocale: string | null = null): Lang {
+  if (isLang(saved)) return saved;
+  const nav = typeof navigator !== 'undefined' ? navigator.language : null;
+  return langOf(platformLocale) ?? langOf(nav) ?? 'en';
 }
 
 export function setLang(l: Lang): void {
@@ -210,13 +49,14 @@ export function getLang(): Lang {
 }
 
 export function t(key: Key, vars: Record<string, string | number> = {}): string {
-  let s = dicts[lang][key] ?? en[key];
+  let s: string = dicts[lang][key] ?? en[key];
   for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
   return s;
 }
 
-export function name(n: { en: string; fr: string }): string {
-  return n[lang];
+/** The name of a language in that language ("Deutsch"). */
+export function langName(l: Lang): string {
+  return dicts[l].langName;
 }
 
 export const DICTS = dicts;

@@ -6,7 +6,7 @@ import { type Fur, makePet } from '../art/pets';
 import { floorTextures, gradientTexture } from '../art/textures';
 import type { Look } from '../game/save';
 import { PLANK_TINTS, SCREW_HEX, drawBomb, headTexture, hiddenTexture, iceTexture, lockTexture, plankTexture } from './look';
-import { BOX_SIZE, type Color, type LevelDef, Puzzle, type PuzzleEvent, SCREW_R, plankWidth } from './model';
+import { BOX_SIZE, type Color, type LevelDef, type PlankStyle, Puzzle, type PuzzleEvent, SCREW_R, plankWidth } from './model';
 
 /**
  * 3D presentation of a puzzle: the object (crate / cage / kennel) with the pet inside, planks and screws on
@@ -295,13 +295,16 @@ export class PuzzleView {
       const tint = PLANK_TINTS[(sp.tint ?? p.id) % PLANK_TINTS.length];
       const W = plankWidth(sp);
       const style = sp.style ?? 0;
-      // four plank looks so levels don't all feel alike: wood, painted metal strip, striped, plywood
-      const mat = style === 1
+      // six plank looks so levels don't all feel alike: wood, painted metal strip, striped, plywood, a rounded
+      // painted stick and a board with cut corners
+      const mat = style >= 4
+        ? new THREE.MeshPhysicalMaterial({ color: new THREE.Color(tint).multiplyScalar(style === 4 ? 1 : 0.94), roughness: style === 4 ? 0.38 : 0.6, clearcoat: style === 4 ? 0.5 : 0 })
+        : style === 1
         ? new THREE.MeshStandardMaterial({ color: new THREE.Color(tint).lerp(new THREE.Color(0x9aa3b8), 0.55), roughness: 0.35, metalness: 0.55 })
         : style === 3
           ? new THREE.MeshStandardMaterial({ map: tex, color: new THREE.Color(tint).lerp(new THREE.Color(0xe8cf9a), 0.6), roughness: 0.7 })
           : new THREE.MeshStandardMaterial({ map: tex, color: tint, roughness: 0.55 });
-      const m = mesh(rbox(sp.len, W, PLANK_D, style === 3 ? 0.02 : 0.07), mat);
+      const m = mesh(style >= 4 ? shapedPlank(sp.len, W, style) : rbox(sp.len, W, PLANK_D, style === 3 ? 0.02 : 0.07), mat);
       g.add(m);
       if (style === 1) {
         // rivets along the metal strip
@@ -1363,3 +1366,37 @@ function heartTexture(): THREE.CanvasTexture {
   return heartTex;
 }
 
+
+/** Plank outlines beyond the rounded box: 4 = a stick with round ends, 5 = a board with cut corners. Centred, depth PLANK_D. */
+function shapedPlank(len: number, w: number, style: PlankStyle): THREE.BufferGeometry {
+  const sh = new THREE.Shape();
+  const hl = len / 2;
+  const hw = w / 2;
+  const bevel = 0.025;
+  if (style === 4) {
+    const r = hw - bevel;
+    sh.moveTo(-hl + hw, -r);
+    sh.lineTo(hl - hw, -r);
+    sh.absarc(hl - hw, 0, r, -Math.PI / 2, Math.PI / 2, false);
+    sh.lineTo(-hl + hw, r);
+    sh.absarc(-hl + hw, 0, r, Math.PI / 2, (3 * Math.PI) / 2, false);
+  } else {
+    const c = Math.min(hw * 0.7, 0.22);
+    const y = hw - bevel;
+    const x = hl - bevel;
+    sh.moveTo(-x + c, -y);
+    sh.lineTo(x - c, -y);
+    sh.lineTo(x, -y + c);
+    sh.lineTo(x, y - c);
+    sh.lineTo(x - c, y);
+    sh.lineTo(-x + c, y);
+    sh.lineTo(-x, y - c);
+    sh.lineTo(-x, -y + c);
+    sh.closePath();
+  }
+  const depth = PLANK_D - bevel * 2;
+  const geo = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 24 });
+  geo.translate(0, 0, -depth / 2);
+  geo.computeVertexNormals();
+  return geo;
+}

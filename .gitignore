@@ -1,6 +1,9 @@
 node_modules/
 dist/
 dist-crazygames/
+dist-gd/
+dist-gamepix/
+dist-e2e/
 *.zip
 test-results/
 playwright-report/
@@ -13,4 +16,10 @@ submission/trailers/.frames-*/
 
 # the CrazyGames upload zip is a deliverable
 !submission/screw-and-rescue-v1.zip
-docs/art/.frames/
+!submission/screw-and-rescue-v2.zip
+!submission-gd/screw-and-rescue-gd-v1.zip
+!submission-gamepix/screw-and-rescue-gamepix-v1.zip
+docs/art/.frames-*/
+docs/art/.fseg-*
+docs/art/.fsegs.txt
+docs/art/.dseg-*

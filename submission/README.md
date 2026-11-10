@@ -39,7 +39,8 @@ puzzle, screw, pets, rescue, logic, brain, strategy, casual, 3d, cute
 
 | File | Size | Use |
 |---|---|---|
-| `screw-and-rescue-v1.zip` | – | game build |
+| `screw-and-rescue-v1.zip` | – | game build (as submitted) |
+| `screw-and-rescue-v2.zip` | – | game build rebuilt from the current code (folder `screw-and-rescue-v2/`): 10 languages, levels 3–10 that need planning |
 | `cover-1920x1080.png` | 1920×1080 | landscape cover |
 | `cover-800x1200.png` | 800×1200 | portrait cover |
 | `cover-800x800.png` | 800×800 | square cover (top-left corner kept clear) |

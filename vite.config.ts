@@ -1,23 +1,45 @@
 import { defineConfig, type Plugin } from 'vite';
 
 /**
- * Two build targets:
- *  - default ("production"): GitHub Pages build (icons, PWA manifest, no external scripts at all).
- *  - "crazygames": the official CrazyGames SDK v3 script tag in <head> (loaded from CrazyGames' own URL,
- *    as their docs require), and everything else inlined into a single index.html: no manifest, no icons,
- *    no asset files, so the game makes no request of its own that could fail or be flagged as missing.
+ * Build-time platform layer: VITE_PLATFORM = web | crazygames | gd | gamepix (or `--mode <platform>`).
+ * `__PLATFORM__` is defined as a literal, so each build only contains its own portal SDK code (src/platform/sdk.ts).
+ *  - web (default, GitHub Pages → dist/): icons, no external script, no SDK, no ads.
+ *  - crazygames (→ dist-crazygames/): the CrazyGames SDK v3 script tag in <head>.
+ *  - gd (→ dist-gd/): GameDistribution; GD_OPTIONS + main.min.js are set up at boot (src/platform/gd.ts).
+ *  - gamepix (→ dist-gamepix/): `window.GamePixConfig = { lifecycle: 'manual' }` and gamepix.sdk.js in <head>,
+ *    before the game bundle.
+ * Portal builds are one self-contained index.html: styles, code and fonts inlined, no manifest, no icons, no
+ * asset files, so the game makes no request of its own that could fail or be flagged as missing.
  */
-function crazyGames(enabled: boolean): Plugin {
+const PLATFORMS = ['web', 'crazygames', 'gd', 'gamepix'] as const;
+type PlatformName = (typeof PLATFORMS)[number];
+
+export const CRAZYGAMES_SDK_URL = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
+export const GAMEPIX_SDK_URL = 'https://integration.gamepix.com/sdk/v3/gamepix.sdk.js';
+
+function platformFor(mode: string): PlatformName {
+  const p = process.env.VITE_PLATFORM || (PLATFORMS.includes(mode as PlatformName) ? mode : 'web');
+  if (!PLATFORMS.includes(p as PlatformName)) throw new Error(`unknown VITE_PLATFORM "${p}" (web | crazygames | gd | gamepix)`);
+  return p as PlatformName;
+}
+
+const SDK_TAGS: Record<PlatformName, string> = {
+  web: '',
+  crazygames: `<script src="${CRAZYGAMES_SDK_URL}"></script>`,
+  gd: '',
+  gamepix: `<script>window.GamePixConfig = { lifecycle: 'manual' };</script>\n    <script src="${GAMEPIX_SDK_URL}"></script>`,
+};
+
+function portalBuild(platform: PlatformName): Plugin {
   return {
-    name: 'crazygames-build',
+    name: 'portal-build',
     enforce: 'post',
     transformIndexHtml: {
       order: 'post',
       handler(html, ctx) {
-        if (!enabled) return html.replace(/\s*<!--\/?web-only-->/g, '');
-        let out = html
-          .replace(/\s*<!--web-only-->[\s\S]*?<!--\/web-only-->/, '')
-          .replace('<!--CRAZYGAMES_SDK-->', '<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>');
+        if (platform === 'web') return html.replace(/\s*<!--\/?web-only-->/g, '').replace(/\s*<!--PLATFORM_SDK-->/, '');
+        let out = html.replace(/\s*<!--web-only-->[\s\S]*?<!--\/web-only-->/, '');
+        out = SDK_TAGS[platform] ? out.replace('<!--PLATFORM_SDK-->', SDK_TAGS[platform]) : out.replace(/\s*<!--PLATFORM_SDK-->/, '');
         const bundle = ctx.bundle;
         if (!bundle) return out;
         // inline the stylesheet and the module script, then drop the files from the output
@@ -40,20 +62,22 @@ function crazyGames(enabled: boolean): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const cg = mode === 'crazygames';
+  const platform = platformFor(mode);
+  const portal = platform !== 'web';
   return {
     base: './',
     define: {
-      __TARGET__: JSON.stringify(cg ? 'crazygames' : 'web'),
+      __PLATFORM__: JSON.stringify(platform),
     },
-    plugins: [crazyGames(cg)],
+    plugins: [portalBuild(platform)],
     // icons only for the web build
-    publicDir: cg ? false : 'public',
+    publicDir: portal ? false : 'public',
     build: {
-      outDir: cg ? 'dist-crazygames' : 'dist',
+      // VITE_OUTDIR: e2e-only builds go elsewhere, so they never overwrite a shipped build
+      outDir: process.env.VITE_OUTDIR || (portal ? `dist-${platform}` : 'dist'),
       target: 'es2020',
-      // CrazyGames: fonts and any other asset become data: URIs inside the single index.html
-      assetsInlineLimit: cg ? 100_000_000 : 0,
+      // portal builds: fonts and any other asset become data: URIs inside the single index.html
+      assetsInlineLimit: portal ? 100_000_000 : 0,
       chunkSizeWarningLimit: 2000,
       reportCompressedSize: false,
       modulePreload: false,

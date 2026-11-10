@@ -150,6 +150,13 @@ export interface Analysis {
   trapScrews: number[];
   /** Positions on the winning line where some free move wins and some free move loses. */
   decisions: number;
+  /**
+   * Positions on the winning line where the "obvious" tap is wrong: a free screw whose colour has an active box
+   * (it would fly straight into it) makes the level unwinnable, so the player has to look further ahead.
+   */
+  obviousWrong: number;
+  /** Tap number (1-based) of the first decision on the winning line; 0 when there is none. */
+  firstDecision: number;
   winPath: number[];
   states: number;
   complete: boolean;
@@ -202,11 +209,14 @@ export function analyze(start: Puzzle, maxStates = 600_000): Analysis {
   // the winning line, and the real decisions on it
   const winPath: number[] = [];
   let decisions = 0;
+  let obviousWrong = 0;
+  let firstDecision = 0;
   if (solvable) {
     const p = root.clone();
     while (p.status === 'play') {
       let good = -1;
       let losing = 0;
+      let obvious = 0;
       for (const s of p.freeScrews().sort((a, b) => goesToBox(p, b) - goesToBox(p, a))) {
         const q = p.clone();
         q.tap(s);
@@ -215,13 +225,18 @@ export function analyze(start: Puzzle, maxStates = 600_000): Analysis {
         } else {
           losing++;
           if (!p.iced[s] && p.boxFor(p.screws[s].color) < 0) traps.add(s);
+          else if (!p.iced[s] && !p.screws[s].hidden) obvious++;
         }
       }
       if (good < 0) break;
-      if (losing > 0) decisions++;
+      if (losing > 0) {
+        decisions++;
+        if (!firstDecision) firstDecision = winPath.length + 1;
+      }
+      if (obvious > 0) obviousWrong++;
       winPath.push(good);
       p.tap(good);
     }
   }
-  return { solvable, minMoves: winPath.length, trapFirstMoves, trapScrews: [...traps], decisions, winPath, states, complete, ms: Date.now() - t0 };
+  return { solvable, minMoves: winPath.length, trapFirstMoves, trapScrews: [...traps], decisions, obviousWrong, firstDecision, winPath, states, complete, ms: Date.now() - t0 };
 }

@@ -1,9 +1,9 @@
 import type { Game } from '../puzzle/game';
 import type { PetKind } from '../art/pets';
-import { getLang, name, setLang, t } from '../game/i18n';
+import { getLang, LANGS, type Lang, langName, setLang, t } from '../game/i18n';
 import { BOOSTER_PRICE, type Booster, DAILY_REWARDS, claimDaily, dailyStatus } from '../game/save';
 import { allPets, KINDS } from '../game/collection';
-import { SHOP, type Slot } from '../game/shop';
+import { itemName, SHOP, type Slot } from '../game/shop';
 import { ICON } from './icons';
 import { renderPetPortraits } from './portraits';
 import { type Mechanic, tierOf } from '../puzzle/mechanics';
@@ -102,7 +102,10 @@ export class Hud {
       const cost = el.querySelector('.cost')!;
       if (stock > 0) cost.innerHTML = `<b>${stock}</b>`;
       else if (g.save.coins >= BOOSTER_PRICE[b.id]) cost.innerHTML = `${ICON.coin}<b>${BOOSTER_PRICE[b.id]}</b>`;
-      else cost.innerHTML = `${ICON.ad}`;
+      else if (g.platform.adsEnabled) cost.innerHTML = `${ICON.ad}`;
+      // no ads in this build: the price stays, greyed out
+      else cost.innerHTML = `${ICON.coin}<b>${BOOSTER_PRICE[b.id]}</b>`;
+      el.classList.toggle('poor', stock <= 0 && g.save.coins < BOOSTER_PRICE[b.id] && !g.platform.adsEnabled);
       el.classList.toggle('active', b.id === 'hammer' && g.hammerMode);
       el.disabled = (this.noAdUntil[b.id] ?? 0) > now;
       el.classList.toggle('off', !g.canUse(b.id) && !(b.id === 'hammer' && g.hammerMode));
@@ -299,6 +302,25 @@ export class Hud {
     }, d);
   }
 
+  /** Title screen (GameDistribution / GamePix builds): the logo and Play. The first Play click may show a pre-roll. */
+  title(onPlay: () => Promise<void> | void): void {
+    const layered = (cls: string, text: string) => `<span class="${cls}"><span class="sh">${text}</span><span class="ol">${text}</span><span class="fg">${text}</span></span>`;
+    this.root.innerHTML = `<div class="title" data-testid="title">
+      <div class="logo">${layered('l1', 'SCREW &amp;')}${layered('l2', 'RESCUE')}</div>
+      <p class="tagline">${t('tagline')}</p>
+      <button class="big primary" data-act="play" data-testid="play">${ICON.play}<span>${t('play')}</span></button>
+      <p class="controls">${t('controls')}</p>
+    </div>`;
+    const btn = this.root.querySelector<HTMLButtonElement>('[data-act=play]')!;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (btn.disabled) return;
+      btn.disabled = true;
+      this.g.audio.play('click');
+      void Promise.resolve(onPlay());
+    });
+  }
+
   moreSoon(): void {
     this.overlay(`<div class="card dialog"><h2>${t('moreSoon')}</h2>
       <button class="big primary" data-act="again">${ICON.restart}<span>${t('level', { n: 1 })}</span></button></div>`);
@@ -367,7 +389,7 @@ export class Hud {
         const has = s.owned.includes(i.id);
         const worn = look[slot] === i.id;
         const sw = i.color !== undefined ? `style="background:#${i.color.toString(16).padStart(6, '0')}"` : '';
-        return `<button class="item ${worn ? 'sel' : ''}" data-item="${i.id}" data-testid="item-${i.id}"><i class="swatch" ${sw}></i><span class="nm">${name(i.name)}</span><span class="price">${worn ? `<em>${t('equipped')}</em>` : has ? t('equip') : `${ICON.coin}${i.price}`}</span></button>`;
+        return `<button class="item ${worn ? 'sel' : ''}" data-item="${i.id}" data-testid="item-${i.id}"><i class="swatch" ${sw}></i><span class="nm">${itemName(i.id)}</span><span class="price">${worn ? `<em>${t('equipped')}</em>` : has ? t('equip') : `${ICON.coin}${i.price}`}</span></button>`;
       }).join('')}</div>`;
     const canvas = body.querySelector<HTMLCanvasElement>('canvas.tryon')!;
     this.tryon?.dispose();
@@ -416,7 +438,8 @@ export class Hud {
     const s = this.g.save.settings;
     const row = (key: 'sound' | 'music' | 'vibration') => `<div class="setrow"><span>${t(key)}</span><button class="toggle ${s[key] ? 'on' : ''}" data-set="${key}" data-testid="set-${key}">${s[key] ? t('on') : t('off')}</button></div>`;
     body.innerHTML = `<h2>${ICON.gear}${t('settings')}</h2>${row('sound')}${row('music')}${row('vibration')}
-      <div class="setrow"><span>${t('language')}</span><span><button class="toggle ${getLang() === 'en' ? 'on' : ''}" data-lang="en">EN</button><button class="toggle ${getLang() === 'fr' ? 'on' : ''}" data-lang="fr" data-testid="lang-fr">FR</button></span></div>
+      <div class="setrow langrow"><span>${t('language')}</span></div>
+      <div class="langs" data-testid="langs">${LANGS.map((l) => `<button class="toggle ${getLang() === l ? 'on' : ''}" data-lang="${l}" data-testid="lang-${l}" lang="${l}">${langName(l)}</button>`).join('')}</div>
       <p class="small">${t('controls')}</p>`;
     body.querySelectorAll<HTMLElement>('[data-set]').forEach((el) =>
       el.addEventListener('click', () => {
@@ -430,7 +453,7 @@ export class Hud {
     );
     body.querySelectorAll<HTMLElement>('[data-lang]').forEach((el) =>
       el.addEventListener('click', () => {
-        const l = el.dataset.lang as 'en' | 'fr';
+        const l = el.dataset.lang as Lang;
         s.lang = l;
         setLang(l);
         this.g.persist();

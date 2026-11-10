@@ -1,1 +1,2 @@
-declare const __TARGET__: 'web' | 'crazygames';
+/** Build target portal (vite.config.ts `define`): a string literal at build time. */
+declare const __PLATFORM__: 'web' | 'crazygames' | 'gd' | 'gamepix';
