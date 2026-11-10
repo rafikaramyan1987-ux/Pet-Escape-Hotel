@@ -135,3 +135,93 @@ export function hint(p: Puzzle): number {
   const r = solve(p, { worst: false, maxStates: 60_000 });
   return r.bestPath[0] ?? -1;
 }
+
+/** Per-level difficulty analysis (audit, generator). */
+export interface Analysis {
+  solvable: boolean;
+  /** Taps of a winning order (every screw out, ice needs two taps). */
+  minMoves: number;
+  /** First moves (free at the start) after which the level can no longer be won. */
+  trapFirstMoves: number;
+  /**
+   * Trap screws: at some point on the winning line the screw is free, its colour has no active box, and tapping
+   * it then (before its box comes) makes the level unwinnable — it clogs the tray.
+   */
+  trapScrews: number[];
+  /** Positions on the winning line where some free move wins and some free move loses. */
+  decisions: number;
+  winPath: number[];
+  states: number;
+  complete: boolean;
+  ms: number;
+}
+
+/**
+ * Exhaustive win/lose search with state hashing (memo on Puzzle.key()). Moves that fill a box are tried first,
+ * so winning lines are found fast; losing subtrees are proven exhaustively.
+ */
+export function analyze(start: Puzzle, maxStates = 600_000): Analysis {
+  const t0 = Date.now();
+  const memo = new Map<string, boolean>();
+  let states = 0;
+  let complete = true;
+  const win = (p: Puzzle): boolean => {
+    if (p.status === 'won') return true;
+    if (p.status === 'lost') return false;
+    const k = p.key();
+    const hit = memo.get(k);
+    if (hit !== undefined) return hit;
+    if (++states > maxStates) {
+      complete = false;
+      return false;
+    }
+    memo.set(k, false);
+    const free = p.freeScrews().sort((a, b) => goesToBox(p, b) - goesToBox(p, a));
+    let ok = false;
+    for (const s of free) {
+      const q = p.clone();
+      q.tap(s);
+      if (win(q)) {
+        ok = true;
+        break;
+      }
+    }
+    memo.set(k, ok);
+    return ok;
+  };
+  const root = start.clone();
+  const solvable = win(root);
+  // the first moves that lose
+  let trapFirstMoves = 0;
+  for (const s of root.freeScrews()) {
+    const q = root.clone();
+    q.tap(s);
+    if (!win(q)) trapFirstMoves++;
+  }
+  const traps = new Set<number>();
+  // the winning line, and the real decisions on it
+  const winPath: number[] = [];
+  let decisions = 0;
+  if (solvable) {
+    const p = root.clone();
+    while (p.status === 'play') {
+      let good = -1;
+      let losing = 0;
+      for (const s of p.freeScrews().sort((a, b) => goesToBox(p, b) - goesToBox(p, a))) {
+        const q = p.clone();
+        q.tap(s);
+        if (win(q)) {
+          if (good < 0) good = s;
+        } else {
+          losing++;
+          if (!p.iced[s] && p.boxFor(p.screws[s].color) < 0) traps.add(s);
+        }
+      }
+      if (good < 0) break;
+      if (losing > 0) decisions++;
+      winPath.push(good);
+      p.tap(good);
+    }
+  }
+  return { solvable, minMoves: winPath.length, trapFirstMoves, trapScrews: [...traps], decisions, winPath, states, complete, ms: Date.now() - t0 };
+}

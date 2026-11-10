@@ -16,7 +16,7 @@ test('level 1 by real taps on the screws: tip, tutorial hand, rescue, next level
   await page.goto('/?q=low');
   await expect(page).toHaveTitle('Screw & Rescue');
   await expect(page.getByTestId('level')).toHaveText('Level 1', { timeout: 60_000 });
-  await expect(page.getByTestId('tip')).toHaveText('Free the colour the toolbox needs');
+  await expect(page.getByTestId('tip')).toHaveText('Tap a screw whose colour has a box at the top');
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
   // tap where the tutorial hand points until the pet is free (the hand's fingertip sits on the best next screw)
   for (let i = 0; i < 20 && (await page.evaluate(() => window.__game!.state().mode)) === 'play'; i++) {
@@ -65,7 +65,7 @@ test('boosters: undo, +1 slot and hammer', async ({ page }) => {
   await page.getByTestId('booster-undo').click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.history.length)).toBe(0);
   await page.getByTestId('booster-slot').click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.tray.length)).toBe(4);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.tray.length)).toBe(6);
   // hammer: arm it, then tap a plank (where one of its free screws is)
   await page.getByTestId('booster-hammer').click();
   const at = await page.evaluate(() => {
@@ -78,41 +78,41 @@ test('boosters: undo, +1 slot and hammer', async ({ page }) => {
   expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.save.boosters)).toEqual({ slot: 0, undo: 0, hammer: 0 });
 });
 
-test('tray full: one continue per level, then the hint after 2 fails', async ({ page }) => {
-  await page.goto('/?q=low&level=35');
-  await expect(page.getByTestId('level')).toHaveText('Level 35', { timeout: 60_000 });
-  // play badly on purpose: always a screw that has no open toolbox (it goes to the tray) until it overflows
+test('tray full: "watch an ad for +1 slot" once per level (only a completed ad rewards), retry, hint after 2 fails', async ({ page }) => {
+  // a stand-in ad SDK whose rewarded ads complete (the web build has none: there the button says no ad is available)
+  await page.addInitScript(() => {
+    (window as unknown as { __ads: number }).__ads = 0;
+    (window as unknown as { CrazyGames: unknown }).CrazyGames = { SDK: {
+      init: async () => undefined,
+      ad: { requestAd: (_t: string, cb: { adStarted?: () => void; adFinished?: () => void }) => { (window as unknown as { __ads: number }).__ads++; cb.adStarted?.(); setTimeout(() => cb.adFinished?.(), 50); } },
+      game: {},
+    } };
+  });
+  await page.goto('/?q=low&level=33');
+  await expect(page.getByTestId('level')).toHaveText('Level 33', { timeout: 60_000 });
+  // play badly on purpose: always a screw that has no active box (it goes to the tray) until the tray is full
   const playBadly = () => page.evaluate(() => {
     const x = (window as unknown as { __game: G }).__game.game;
-    const p = x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
-    for (let k = 0; k < 200 && p.status === 'play'; k++) {
-      const f = (x.puzzle as unknown as typeof p).freeScrews();
-      const q = x.puzzle as unknown as typeof p;
-      const wrong = f.filter((id) => q.iced[id] || !q.boxes.some((b) => b && b.color === q.screws[id].color));
+    const q = () => x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
+    for (let k = 0; k < 200 && q().status === 'play'; k++) {
+      const f = q().freeScrews();
+      const wrong = f.filter((id) => q().iced[id] || !q().boxes.some((b) => b && b.color === q().screws[id].color));
       x.tap((wrong.length ? wrong : f)[0]);
     }
     return x.puzzle.status === 'lost' ? x.lostReason : x.puzzle.status;
   });
-  let reason = '';
-  for (let attempt = 0; attempt < 8 && reason !== 'tray'; attempt++) {
-    reason = await playBadly();
-    if (reason !== 'tray') await page.evaluate(() => (window as unknown as { __game: G }).__game.game.retry());
-  }
-  expect(reason).toBe('tray');
+  expect(await playBadly()).toBe('tray');
   await expect(page.getByTestId('lost-title')).toHaveText('Tray full!', { timeout: 20_000 });
-  // one continue: +1 slot when it helps (the same moves with a bigger tray), else undo the last 3 taps
-  await expect(page.getByTestId('undo3')).toBeVisible();
-  const slot = (await page.getByTestId('continue').count()) > 0;
-  await page.getByTestId(slot ? 'continue' : 'undo3').click();
+  await expect(page.getByTestId('continue')).toHaveText('Watch an ad for +1 tray slot and continue');
+  await page.getByTestId('continue').click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __game: G }).__game.game.mode)).toBe('play');
-  expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.tray.length)).toBe(slot ? 6 : 5);
-  // second loss in the same attempt: no more continues, only retry
+  expect(await page.evaluate(() => (window as unknown as { __ads: number }).__ads)).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.puzzle.tray.length)).toBe(5);
+  // second loss: the ad continue was used for this level, only retry
   expect(await playBadly()).not.toBe('play');
   await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId('continue')).toHaveCount(0);
-  await expect(page.getByTestId('undo3')).toHaveCount(0);
-  // retry is instant; two fails on this level → the hint bulb (never automatic)
-  // (timed in the page: the headless browser renders in software, so wall-clock frames say nothing)
+  // retry is instant (timed in the page: the headless browser renders in software)
   const ms = await page.evaluate(() => {
     const t = performance.now();
     (document.querySelector('[data-testid=retry]') as HTMLElement).click();
@@ -120,15 +120,40 @@ test('tray full: one continue per level, then the hint after 2 fails', async ({ 
   });
   expect(ms).toBeLessThan(1000);
   await expect(page.getByTestId('lost')).toHaveCount(0);
+  // two fails on this level → the hint bulb (never automatic)
   expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.fails)).toBe(2);
   await expect(page.getByTestId('hint')).toBeVisible();
   await expect(page.locator('.hand')).toHaveCount(0);
   await page.getByTestId('hint').click();
   await expect(page.locator('.hand')).toBeVisible();
+  // still once per level after a retry
+  await playBadly();
+  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('continue')).toHaveCount(0);
+});
+
+test('no ad SDK (web build): the ad continue says no ad is available and rewards nothing', async ({ page }) => {
+  await page.goto('/?q=low&level=12');
+  await expect(page.getByTestId('level')).toHaveText('Level 12', { timeout: 60_000 });
+  await page.evaluate(() => {
+    const x = (window as unknown as { __game: G }).__game.game;
+    const q = () => x.puzzle as unknown as { freeScrews(): number[]; screws: { color: string }[]; boxes: ({ color: string } | null)[]; status: string; iced: boolean[] };
+    for (let k = 0; k < 200 && q().status === 'play'; k++) {
+      const f = q().freeScrews();
+      const wrong = f.filter((id) => q().iced[id] || !q().boxes.some((b) => b && b.color === q().screws[id].color));
+      x.tap((wrong.length ? wrong : f)[0]);
+    }
+  });
+  await expect(page.getByTestId('lost')).toBeVisible({ timeout: 20_000 });
+  if ((await page.getByTestId('continue').count()) > 0) {
+    await page.getByTestId('continue').click();
+    await expect(page.locator('#toast')).toHaveText('No ad available right now, try later');
+    expect(await page.evaluate(() => (window as unknown as { __game: G }).__game.game.mode)).toBe('lost');
+  }
 });
 
 test('a new mechanic gets a one-screen tip on its first level', async ({ page }) => {
-  await page.goto('/?q=low&level=8');
+  await page.goto('/?q=low&level=9');
   await expect(page.getByTestId('mechanic-tip')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId('mechanic-tip')).toContainText('Ice');
   await page.getByTestId('gotit').click();

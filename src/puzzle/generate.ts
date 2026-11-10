@@ -1,32 +1,41 @@
 import type { PetKind } from '../art/pets';
-import { BOX_SIZE, COLORS, type Color, type LevelDef, type ObjectKind, PLANK_W, Puzzle, type PlankSpec, buildLevel, plankCovers, validateLevel } from './model';
-import { solve } from './solver';
-import { MECHANIC_INTRO, type Mechanic } from './mechanics';
+import { MECHANIC_INTRO, type Mechanic, type Tier, tierOf, trayOf } from './mechanics';
+import { BOX_SIZE, COLORS, type Color, type LevelDef, type ObjectKind, OPEN_BOXES, Puzzle, type PlankSpec, buildLevel, plankCovers, plankWidth, validateLevel } from './model';
+import { analyze } from './solver';
+
+export { MECHANIC_INTRO, type Mechanic, tierOf, trayOf } from './mechanics';
 
 /**
  * Seeded level generator (run offline by `npm run levels`; the result is committed as levels.json and
- * re-checked by the audit in CI). Every candidate is solved exhaustively and kept only if it hits the level's
- * targets (see `targetFor`): solvable, best-peak margin ≤ 1 (planning needed) and a random-tap failure rate in
- * the band for its stage. Random play = a random free screw each tap, 300 games: no level can be cleared by
- * tapping without thinking, and the bands make the curve rise.
+ * re-checked by the audit in CI). A candidate is a random layered layout; a local search then tunes its colours
+ * and box queue until the level hits the targets of its tier (see `targetFor`), all proven by the solver:
+ * solvable without boosters, a random-tapping bot (1000 games) failing inside the tier's band, at least one trap
+ * from level 3 (a screw in plain sight whose box is not active and that makes the level unwinnable if tapped too
+ * early) and real decisions on the winning line.
  */
-export { MECHANIC_INTRO, type Mechanic } from './mechanics';
-
 export interface Target {
+  tier: Tier;
   tray: number;
-  /** Random-tap failure rate band (300 games). */
+  /** Random-tap failure rate band (1000 games). */
   fail: [number, number];
-  /** tray − best peak. */
-  margin: [number, number];
-  boss: boolean;
+  /** At least this many trap screws (in plain sight, no active box, tapping it before its box comes loses). */
+  traps: number;
+  /** At least this many decisions on the winning line. */
+  decisions: number;
+  /** Winning line length (taps): 30–90 s of real play at ~2.5 s per tap. */
+  moves: [number, number];
 }
 
-/** What every level must hit (the audit fails CI on any drift). */
 export function targetFor(id: number): Target {
-  const boss = id % 10 === 0;
-  const tray = id <= 10 ? 3 : id <= 30 ? 4 : 5;
-  const fail: [number, number] = boss ? [0.9, 1] : id <= 5 ? [0.15, 0.3] : id <= 10 ? [0.3, 0.5] : id <= 30 ? [0.5, 0.7] : [0.7, 0.9];
-  return { tray, fail, margin: [0, 1], boss };
+  const tier = tierOf(id);
+  const fail: Record<Tier, [number, number]> = {
+    tutorial: [0.03, 0.35],
+    easy: [0.4, 0.7],
+    normal: [0.7, 0.9],
+    hard: [0.9, 0.98],
+    veryhard: [0.98, 1],
+  };
+  return { tier, tray: trayOf(id), fail: fail[tier], traps: id >= 3 ? 1 : 0, decisions: id >= 3 ? 2 : 0, moves: [12, 36] };
 }
 
 export interface Band {
@@ -35,28 +44,22 @@ export interface Band {
   layers: [number, number];
   /** Total screws (multiple of 3). */
   screws: [number, number];
-  open: number[];
-  /** Margin the generator aims for (within the target). */
-  margin: [number, number];
   /** Failure band the generator aims for (a little inside the target, so small code changes don't drift). */
   fail: [number, number];
 }
 
 export function bandFor(n: number): Band {
   const tg = targetFor(n);
-  const inner: [number, number] = tg.boss ? [0.91, 0.995] : [tg.fail[0] + 0.02, tg.fail[1] - 0.02];
-  // the level after a boss sits in the easier half of its band
-  if (n % 10 === 1 && n > 10) inner[1] = (inner[0] + inner[1]) / 2;
-  const margin: [number, number] = n <= 10 ? [1, 1] : [0, 1];
-  let b: Band;
-  if (n <= 10) b = { colors: [2, 3], planks: [3, 5], layers: [2, 3], screws: [9, 15], open: [1], margin, fail: inner };
-  else if (n <= 30) b = { colors: [3, 4], planks: [4, 6], layers: [2, 4], screws: [12, 21], open: [1, 2], margin, fail: inner };
-  else if (n <= 60) b = { colors: [4, 5], planks: [5, 7], layers: [3, 4], screws: [15, 24], open: [2], margin, fail: inner };
-  else b = { colors: [5, 6], planks: [5, 8], layers: [3, 5], screws: [18, 27], open: [2], margin, fail: inner };
-  // level 1: two colours, two layers, a few planks (a plank on top hides screws you need later)
-  if (n === 1) b = { ...b, colors: [2, 2], planks: [3, 4], layers: [2, 2], screws: [12, 15] };
-  if (tg.boss && n > 10) b = { ...b, colors: [Math.min(6, b.colors[0] + 1), Math.min(6, b.colors[1] + 1)], planks: [b.planks[0] + 1, b.planks[1] + 1], layers: [Math.min(5, b.layers[0] + 1), Math.min(5, b.layers[1] + 1)], screws: [b.screws[0] + 3, Math.min(30, b.screws[1] + 3)] };
-  return b;
+  const inner: [number, number] = tg.tier === 'veryhard' ? [0.985, 1] : [tg.fail[0] + 0.02, tg.fail[1] - 0.02];
+  const late = n > 30;
+  const b: Record<Tier, Band> = {
+    tutorial: { colors: [2, 3], planks: [3, 4], layers: [2, 2], screws: [12, 15], fail: inner },
+    easy: { colors: [3, 4], planks: [4, 6], layers: [2, 3], screws: [12, 18], fail: inner },
+    normal: late ? { colors: [4, 6], planks: [5, 8], layers: [3, 5], screws: [15, 24], fail: inner } : { colors: [4, 5], planks: [5, 7], layers: [3, 4], screws: [15, 21], fail: inner },
+    hard: { colors: [4, 6], planks: [5, 8], layers: [3, 5], screws: [15, 24], fail: inner },
+    veryhard: { colors: [4, 6], planks: [5, 8], layers: [3, 5], screws: [15, 24], fail: inner },
+  };
+  return b[tg.tier];
 }
 
 export function rng(seed: number): () => number {
@@ -74,11 +77,17 @@ const HALF_W = 1.7;
 const HALF_H = 1.38;
 const OBJECTS: ObjectKind[] = ['crate', 'cage', 'kennel', 'carrier', 'toybox'];
 const PETS: PetKind[] = ['dog', 'cat', 'hamster'];
+/** Plank widths: narrow strips, standard planks, wide boards. */
+const WIDTHS = [0.56, 0.72, 0.72, 0.9];
+
+function halfExtents(p: PlankSpec): [number, number] {
+  const a = (p.angle * Math.PI) / 180;
+  const w = plankWidth(p);
+  return [(Math.abs(Math.cos(a)) * p.len) / 2 + (Math.abs(Math.sin(a)) * w) / 2, (Math.abs(Math.sin(a)) * p.len) / 2 + (Math.abs(Math.cos(a)) * w) / 2];
+}
 
 function plankInside(p: PlankSpec): boolean {
-  const a = (p.angle * Math.PI) / 180;
-  const hx = (Math.abs(Math.cos(a)) * p.len) / 2 + (Math.abs(Math.sin(a)) * PLANK_W) / 2;
-  const hy = (Math.abs(Math.sin(a)) * p.len) / 2 + (Math.abs(Math.cos(a)) * PLANK_W) / 2;
+  const [hx, hy] = halfExtents(p);
   return Math.abs(p.x) + hx <= HALF_W + 0.25 && Math.abs(p.y) + hy <= HALF_H + 0.25;
 }
 
@@ -86,7 +95,8 @@ function plankInside(p: PlankSpec): boolean {
 function overlaps(a: PlankSpec, b: PlankSpec): boolean {
   const test = (p: PlankSpec, q: PlankSpec) => {
     const r = (p.angle * Math.PI) / 180;
-    for (let i = -4; i <= 4; i++) for (const w of [-0.3, 0, 0.3]) {
+    const hw = plankWidth(p) * 0.42;
+    for (let i = -4; i <= 4; i++) for (const w of [-hw, 0, hw]) {
       const t = (i / 4) * (p.len / 2);
       const x = p.x + Math.cos(r) * t - Math.sin(r) * w;
       const y = p.y + Math.sin(r) * t + Math.cos(r) * w;
@@ -109,17 +119,20 @@ export function makeLayout(r: () => number, band: Band): PlankSpec[] | null {
     // layer 0: bars; higher layers: crossing bars and diagonals over them
     const kind = r();
     let angle: number;
-    if (layer === 0) angle = kind < 0.6 ? 0 : kind < 0.9 ? 90 : (r() < 0.5 ? 1 : -1) * (20 + r() * 15);
+    if (layer === 0) angle = kind < 0.55 ? 0 : kind < 0.85 ? 90 : (r() < 0.5 ? 1 : -1) * (20 + r() * 15);
     else angle = kind < 0.35 ? 0 : kind < 0.6 ? 90 : (r() < 0.5 ? 1 : -1) * (22 + r() * 18);
     const vertical = Math.abs(angle) > 60;
     const maxLen = vertical ? 2.75 : Math.abs(angle) > 5 ? 3.6 : 3.4;
     const len = Math.round((1.7 + r() * (maxLen - 1.7)) * 10) / 10;
     const screws = len < 1.9 ? 2 : len < 2.6 ? 2 + Math.floor(r() * 2) : 3 + Math.floor(r() * 2);
+    const w = WIDTHS[Math.floor(r() * WIDTHS.length)];
     const p: PlankSpec = {
       x: Math.round((r() * 2 - 1) * (HALF_W - (vertical ? 0.4 : 0.6)) * 20) / 20,
       y: Math.round((r() * 2 - 1) * (HALF_H - (vertical ? 0.2 : 0.4)) * 20) / 20,
-      len, angle: Math.round(angle), layer, screws: new Array(Math.min(4, screws)).fill('red'), tint: Math.floor(r() * 5),
+      len, angle: Math.round(angle), layer, screws: new Array(Math.min(4, screws)).fill('red'),
+      w, tint: Math.floor(r() * 5), style: Math.floor(r() * 4) as PlankSpec['style'],
     };
+    if (w === 0.72) delete p.w;
     if (!plankInside(p)) continue;
     if (planks.some((q) => q.layer === p.layer && overlaps(p, q))) continue;
     // upper planks must actually cover something (that's the point of layers)
@@ -138,9 +151,7 @@ export function center(planks: PlankSpec[]): void {
   let y0 = Infinity;
   let y1 = -Infinity;
   for (const p of planks) {
-    const a = (p.angle * Math.PI) / 180;
-    const hx = (Math.abs(Math.cos(a)) * p.len) / 2 + (Math.abs(Math.sin(a)) * PLANK_W) / 2;
-    const hy = (Math.abs(Math.sin(a)) * p.len) / 2 + (Math.abs(Math.cos(a)) * PLANK_W) / 2;
+    const [hx, hy] = halfExtents(p);
     x0 = Math.min(x0, p.x - hx);
     x1 = Math.max(x1, p.x + hx);
     y0 = Math.min(y0, p.y - hy);
@@ -152,12 +163,6 @@ export function center(planks: PlankSpec[]): void {
     p.x = Math.round((p.x - dx) * 100) / 100;
     p.y = Math.round((p.y - dy) * 100) / 100;
   }
-}
-
-/** spacingOk for every plank of a finished layout. */
-function spacingAll(planks: PlankSpec[]): boolean {
-  for (let i = 1; i <= planks.length; i++) if (!spacingOk(planks.slice(0, i))) return false;
-  return true;
 }
 
 /** Screws must not sit on top of each other. Same layer: heads must not touch. Different layers: just never
@@ -175,7 +180,6 @@ function spacingOk(planks: PlankSpec[]): boolean {
 
 export interface Generated {
   def: LevelDef;
-  margin: number;
   failRate: number;
   tries: number;
 }
@@ -209,7 +213,7 @@ export function fitScrews(planks: PlankSpec[], lo: number, hi: number): boolean 
   return total % BOX_SIZE === 0 && total >= lo && total <= hi;
 }
 
-/** Colour the screws and build the toolbox queue. */
+/** Colour the screws and build the box queue (the palette changes from level to level). */
 export function colorize(r: () => number, planks: PlankSpec[], colors: number): Color[] | null {
   const total = planks.reduce((s, p) => s + p.screws.length, 0);
   const boxes = total / BOX_SIZE;
@@ -231,20 +235,24 @@ export function colorize(r: () => number, planks: PlankSpec[], colors: number): 
   return shuffle(r, queue);
 }
 
-/** Which mechanics a level uses: its intro mechanic, plus a random mix of the ones already met. */
+/** Which mechanics a level uses: its intro mechanic, plus a mix of the ones already met. */
 function mechanicsFor(r: () => number, n: number): Mechanic[] {
-  const intro = (Object.keys(MECHANIC_INTRO) as Mechanic[]).find((m) => MECHANIC_INTRO[m] === n);
+  const all = Object.keys(MECHANIC_INTRO) as Mechanic[];
+  const intro = all.find((m) => MECHANIC_INTRO[m] === n);
   if (intro) return [intro];
-  const known = (Object.keys(MECHANIC_INTRO) as Mechanic[]).filter((m) => MECHANIC_INTRO[m] < n);
+  const known = all.filter((m) => MECHANIC_INTRO[m] < n);
+  const max = n > 40 ? 3 : 2;
   const out: Mechanic[] = [];
-  for (const m of shuffle(r, known)) if (out.length < 2 && r() < 0.4) out.push(m);
+  for (const m of shuffle(r, known)) if (out.length < max && r() < 0.5) out.push(m);
+  // levels with mechanics never go long without one
+  if (!out.length && known.length && r() < 0.8) out.push(known[Math.floor(r() * known.length)]);
   return out;
 }
 
-/** Add mechanics to a coloured level (bomb counters are set after a first solve). */
+/** Add mechanics to a layout (bomb counters are set after a first solve). */
 function applyMechanics(r: () => number, def: LevelDef, mech: Mechanic[], intro: boolean): boolean {
   const probe = new Puzzle(def);
-  const at = (sid: number) => {
+  const modOf = (sid: number) => {
     const s = probe.screws[sid];
     const p = def.planks[s.plank];
     p.mods ??= p.screws.map(() => null);
@@ -257,35 +265,39 @@ function applyMechanics(r: () => number, def: LevelDef, mech: Mechanic[], intro:
     const m = def.planks[s.plank].mods?.[probe.planks[s.plank].screws.indexOf(sid)];
     return !m || Object.keys(m).length === 0;
   };
+  const plainPlank = (i: number) => def.planks[i].lock === undefined && def.planks[i].chain === undefined && !def.planks[i].sticky;
   const ids = shuffle(r, probe.screws.map((s) => s.id));
+  const topLayer = Math.max(...def.planks.map((p) => p.layer));
   for (const m of mech) {
     if (m === 'ice') {
-      // intro: the ice is in plain sight
       const pool = ids.filter((k) => plain(k) && (!intro || probe.isUncovered(k)));
-      const n = intro ? 3 : 1 + Math.floor(r() * 2);
+      const n = intro ? 3 : 1 + Math.floor(r() * 3);
       if (pool.length < n) return false;
-      for (const k of pool.slice(0, n)) at(k).ice = 1;
+      for (const k of pool.slice(0, n)) modOf(k).ice = 1;
     } else if (m === 'hidden') {
       const pool = ids.filter((k) => plain(k) && !probe.isUncovered(k));
       const n = intro ? 2 : 1 + Math.floor(r() * 2);
       if (pool.length < n) return false;
-      for (const k of pool.slice(0, n)) at(k).hidden = 1;
+      for (const k of pool.slice(0, n)) modOf(k).hidden = 1;
     } else if (m === 'lock') {
-      const pairs = intro ? 1 : 1 + Math.floor(r() * 2);
-      for (let sym = 0; sym < pairs; sym++) {
-        const lock = ids.find((k) => plain(k));
-        const key = ids.find((k) => plain(k) && k !== lock && probe.screws[k].plank !== probe.screws[lock ?? -1]?.plank && (!intro || probe.isUncovered(k)));
-        if (lock === undefined || key === undefined) return false;
-        at(lock).lock = sym;
-        at(key).key = sym;
+      // a locked plank, and its key screw on another plank (in plain sight on the intro level)
+      const planks = shuffle(r, def.planks.map((_, i) => i)).filter(plainPlank);
+      let done = false;
+      for (const pi of planks) {
+        const key = ids.find((k) => plain(k) && probe.screws[k].plank !== pi && (!intro || probe.isUncovered(k)));
+        if (key === undefined) continue;
+        def.planks[pi].lock = 0;
+        modOf(key).key = 0;
+        done = true;
+        break;
       }
+      if (!done) return false;
     } else if (m === 'chain') {
-      // two planks on the same layer, side by side
-      const order = shuffle(r, def.planks.map((_, i) => i));
+      const order = shuffle(r, def.planks.map((_, i) => i)).filter(plainPlank);
       let done = false;
       for (const a of order) {
         for (const b of order) {
-          if (a >= b || def.planks[a].layer !== def.planks[b].layer || def.planks[a].chain !== undefined || def.planks[b].chain !== undefined) continue;
+          if (a >= b || def.planks[a].layer !== def.planks[b].layer) continue;
           if (Math.hypot(def.planks[a].x - def.planks[b].x, def.planks[a].y - def.planks[b].y) > 2.2) continue;
           def.planks[a].chain = 0;
           def.planks[b].chain = 0;
@@ -296,90 +308,62 @@ function applyMechanics(r: () => number, def: LevelDef, mech: Mechanic[], intro:
       }
       if (!done) return false;
     } else if (m === 'sticky') {
-      const colors = [...new Set(def.planks.flatMap((p) => p.screws))];
-      def.sticky = { slot: def.tray - 1, color: colors[Math.floor(r() * colors.length)] };
+      // a plank on top, all its screws in plain sight, at least 3 of them
+      const cands = def.planks.map((p, i) => ({ p, i })).filter(({ p, i }) => p.layer === topLayer && plainPlank(i) && p.screws.length >= 3 && probe.planks[i].screws.every((k) => probe.isUncovered(k) && plain(k)));
+      if (!cands.length) return false;
+      def.planks[cands[Math.floor(r() * cands.length)].i].sticky = 1;
     }
   }
   return true;
 }
 
-/** Bomb: on a top-layer plank, counter = the taps the best order needs to drop it, plus a little slack. */
+/** Bomb screw: counter = the taps the winning line needs to take it out, plus a little slack. */
 function addBomb(r: () => number, def: LevelDef, slackMax: number): boolean {
-  const top = Math.max(...def.planks.map((p) => p.layer));
-  const cands = def.planks.map((p, i) => ({ p, i })).filter(({ p }) => p.layer === top && p.chain === undefined);
-  if (!cands.length) return false;
-  const { i } = cands[Math.floor(r() * cands.length)];
-  const res = solve(new Puzzle(def), { worst: false, maxStates: 200_000 });
+  const res = analyze(new Puzzle(def), 120_000);
   if (!res.solvable) return false;
+  const probe = new Puzzle(def);
+  const plain = probe.screws.filter((s) => {
+    const m = def.planks[s.plank].mods?.[probe.planks[s.plank].screws.indexOf(s.id)];
+    return !m || Object.keys(m).length === 0;
+  });
+  // prefer a screw the line takes out in the middle: early enough to matter, late enough to tick down
   const p = new Puzzle(def);
-  let fell = -1;
-  for (const m of res.bestPath) {
+  const when = new Map<number, number>();
+  for (const m of res.winPath) {
     p.tap(m);
-    if (p.plankGone[i]) {
-      fell = p.taps;
-      break;
-    }
+    if (p.removed[m]) when.set(m, p.taps);
   }
-  if (fell < 0) return false;
-  def.planks[i].bomb = fell + 2 + Math.floor(r() * (slackMax - 1));
+  const cands = plain.filter((s) => (when.get(s.id) ?? 0) >= 4).sort(() => r() - 0.5);
+  if (!cands.length) return false;
+  const s = cands[0];
+  const pl = def.planks[s.plank];
+  pl.mods ??= pl.screws.map(() => null);
+  pl.mods[probe.planks[s.plank].screws.indexOf(s.id)] = { bomb: when.get(s.id)! + 1 + Math.floor(r() * slackMax) };
   return true;
 }
 
-/** Hand-drawn layouts for levels 1–5 (one new idea each); the generator only picks their colours. */
-type Fixed = { colors: number; object: LevelDef['object']; planks: (Omit<PlankSpec, 'screws'> & { n: number })[] };
-export const FIXED: Record<number, Fixed> = {
-  // 2: the toolbox queue shows the next colours and must be followed
-  2: { colors: 2, object: 'crate', planks: [
-    { x: 0, y: 0.85, len: 3.3, angle: 0, layer: 0, n: 4, tint: 1 },
-    { x: 0, y: 0, len: 3.3, angle: 0, layer: 0, n: 4, tint: 3 },
-    { x: 0, y: -0.85, len: 3.3, angle: 0, layer: 0, n: 4, tint: 2 },
-    { x: -0.82, y: 0.42, len: 1.9, angle: 90, layer: 1, n: 3, tint: 0 },
-    { x: 0.82, y: -0.42, len: 1.9, angle: 90, layer: 1, n: 3, tint: 4 },
-  ] },
-  // 3: two layers: the screw you need is under another plank
-  3: { colors: 2, object: 'crate', planks: [
-    { x: -0.85, y: 0, len: 2.6, angle: 90, layer: 0, n: 4, tint: 2 },
-    { x: 0.85, y: 0, len: 2.6, angle: 90, layer: 0, n: 4, tint: 3 },
-    { x: 0, y: 0.55, len: 3.3, angle: 0, layer: 1, n: 3, tint: 0 },
-    { x: 0, y: -0.55, len: 3.3, angle: 0, layer: 1, n: 4, tint: 1 },
-  ] },
-  // 4: three colours and a crossed plank: the order of removing planks matters
-  4: { colors: 3, object: 'cage', planks: [
-    { x: 0, y: 0.95, len: 3.2, angle: 0, layer: 0, n: 4, tint: 2 },
-    { x: 0, y: -0.95, len: 3.2, angle: 0, layer: 0, n: 4, tint: 3 },
-    { x: 0, y: 0, len: 3.5, angle: 28, layer: 1, n: 4, tint: 1 },
-    { x: 0, y: 0, len: 3.5, angle: -28, layer: 2, n: 3, tint: 0 },
-  ] },
-  // 5: mini-boss: three colours, three layers, a small margin
-  5: { colors: 3, object: 'kennel', planks: [
-    { x: -0.85, y: -0.1, len: 2.6, angle: 90, layer: 0, n: 4, tint: 3 },
-    { x: 0.85, y: -0.1, len: 2.6, angle: 90, layer: 0, n: 4, tint: 2 },
-    { x: 0, y: 0.62, len: 3.3, angle: 0, layer: 1, n: 3, tint: 1 },
-    { x: 0, y: -0.8, len: 3.3, angle: 0, layer: 1, n: 4, tint: 0 },
-    { x: 0, y: -0.1, len: 2.2, angle: 90, layer: 2, n: 3, tint: 4 },
-  ] },
-};
-
-/** How far a level is from its band (0 = inside). Unsolvable or unfinished: huge. */
-export function score(def: LevelDef, band: Band, games: number): { score: number; margin: number; fail: number } {
-  const res = solve(new Puzzle(def), { worst: false, maxStates: 60_000 });
-  if (!res.complete || !res.solvable) return { score: 100, margin: -1, fail: 1 };
-  const m = res.margin;
-  const mPen = m < band.margin[0] ? band.margin[0] - m : m > band.margin[1] ? m - band.margin[1] : 0;
+/** How far a level is from its targets (0 = all met). Unsolvable or unfinished: huge. */
+export function score(def: LevelDef, band: Band, games: number): { score: number; fail: number } {
+  const tg = targetFor(def.id);
+  const a = analyze(new Puzzle(def), 120_000);
+  if (!a.complete || !a.solvable) return { score: 100, fail: 1 };
   const fail = randomFailRate(def, games, 11);
   const fPen = fail < band.fail[0] ? band.fail[0] - fail : fail > band.fail[1] ? fail - band.fail[1] : 0;
-  return { score: mPen + fPen * 4, margin: m, fail };
+  // no trap yet: steer towards a tighter tray budget (a trap needs the best line to use the whole tray)
+  let tPen = 0;
+  if (a.trapScrews.length < tg.traps) tPen = 0.5;
+  const dPen = Math.max(0, tg.decisions - a.decisions) * 0.15;
+  const mPen = a.minMoves < tg.moves[0] || a.minMoves > tg.moves[1] ? 1 : 0;
+  return { score: fPen * 4 + tPen + dPen + mPen, fail };
 }
 
 /**
- * Local search over the colouring: swap the colours of two screws, or two toolboxes in the queue, and keep the
- * change when the level gets closer to its band. (Blind random colourings almost never land in a band: the
- * danger depends on how many wrong-coloured screws are reachable in each phase.)
+ * Local search over the colouring: swap the colours of two screws, or two boxes in the queue, and keep the
+ * change when the level gets closer to its targets.
  */
-export function tuneColors(r: () => number, def: LevelDef, band: Band, iters: number): boolean {
-  const flat = () => def.planks.flatMap((p, pi) => p.screws.map((_, si) => [pi, si] as const));
-  const cells = flat();
-  let cur = score(def, band, 80);
+export function tuneColors(r: () => number, def: LevelDef, band: Band, iters: number, frozen = new Set<string>(), queueFixed = 0): boolean {
+  const cells = def.planks.flatMap((p, pi) => p.screws.map((_, si) => [pi, si] as const)).filter(([pi, si]) => !frozen.has(`${pi}:${si}`));
+  let cur = score(def, band, 150);
   for (let i = 0; i < iters && cur.score > 0; i++) {
     const undo: (() => void)[] = [];
     const moves = 1 + Math.floor(r() * 2);
@@ -397,23 +381,24 @@ export function tuneColors(r: () => number, def: LevelDef, band: Band, iters: nu
         });
       } else {
         const q = def.queue;
-        const a = Math.floor(r() * q.length);
-        const b = Math.floor(r() * q.length);
+        if (q.length - queueFixed < 2) continue;
+        const a = queueFixed + Math.floor(r() * (q.length - queueFixed));
+        const b = queueFixed + Math.floor(r() * (q.length - queueFixed));
         if (q[a] === q[b]) continue;
         [q[a], q[b]] = [q[b], q[a]];
         undo.push(() => ([q[a], q[b]] = [q[b], q[a]]));
       }
     }
     if (!undo.length) continue;
-    const next = score(def, band, 80);
+    const next = score(def, band, 150);
     if (next.score <= cur.score) cur = next;
     else for (const u of undo.reverse()) u();
   }
   return cur.score === 0;
 }
 
-/** Random-play failure rate (300 games, fixed seed: the audit reproduces it exactly). */
-export function randomFailRate(def: LevelDef, games = 300, seed = 7): number {
+/** Random-tapping bot failure rate (a random removable screw each tap; fixed seed: the audit reproduces it). */
+export function randomFailRate(def: LevelDef, games = 1000, seed = 7): number {
   const r = rng(seed);
   let fails = 0;
   for (let g = 0; g < games; g++) {
@@ -428,55 +413,32 @@ export function randomFailRate(def: LevelDef, games = 300, seed = 7): number {
   return fails / games;
 }
 
-export function generateLevel(n: number, seed = n * 7919, maxTries = 6000): Generated {
+export function generateLevel(n: number, seed = n * 7919, maxTries = 3000): Generated {
   const band = bandFor(n);
   const tg = targetFor(n);
   const r = rng(seed);
-  const template = FIXED[n];
   for (let tries = 1; tries <= maxTries; tries++) {
-    // a template that won't land in its band after 800 tries hands over to the layout search (same idea:
-    // its colours and layer count)
-    const fixed = tries <= 800 ? template : undefined;
-    if (template && !fixed && tries === 801) {
-      const layers = new Set(template.planks.map((p) => p.layer)).size;
-      Object.assign(band, { colors: [template.colors, template.colors], layers: [layers, layers], planks: [template.planks.length, template.planks.length + 1], screws: [12, 18] });
+    const planks = makeLayout(r, band);
+    if (!planks) {
+      rej('layout');
+      continue;
     }
-    let planks: PlankSpec[] | null;
-    if (fixed) {
-      // the hand-drawn layout, nudged a little each try (screws per plank, small offsets), same idea
-      planks = fixed.planks.map(({ n: k, ...p }) => {
-        const len = Math.round((p.len + (r() - 0.5) * 0.3) * 10) / 10;
-        const cnt = Math.max(2, Math.min(len >= 2.4 ? 4 : 3, k + Math.floor(r() * 3) - 1));
-        return { ...p, len, x: Math.round((p.x + (r() - 0.5) * 0.16) * 100) / 100, y: Math.round((p.y + (r() - 0.5) * 0.16) * 100) / 100, screws: new Array(cnt).fill('red') as Color[] };
-      });
-      if (!spacingAll(planks) || !fitScrews(planks, 12, 18) || !spacingAll(planks)) {
-        rej('layout');
-        continue;
-      }
-    } else {
-      planks = makeLayout(r, band);
-      if (!planks) {
-        rej('layout');
-        continue;
-      }
-      if (!fitScrews(planks, band.screws[0], band.screws[1])) {
-        rej('screws');
-        continue;
-      }
+    if (!fitScrews(planks, band.screws[0], band.screws[1])) {
+      rej('screws');
+      continue;
     }
     center(planks);
-    const colors = fixed ? fixed.colors : pick(r, band.colors);
-    const queue = colorize(r, planks, colors);
+    const queue = colorize(r, planks, pick(r, band.colors));
     if (!queue) {
       rej('colours');
       continue;
     }
     const def: LevelDef = {
-      id: n, object: template?.object ?? OBJECTS[(n - 1) % OBJECTS.length], pet: PETS[(n - 1) % PETS.length],
-      open: band.open[Math.floor(r() * band.open.length)], tray: tg.tray, planks, queue,
+      id: n, object: OBJECTS[(n - 1) % OBJECTS.length], pet: PETS[(n - 1) % PETS.length],
+      open: OPEN_BOXES, tray: tg.tray, planks, queue,
     };
-    if (n === 1) def.tutorial = true;
-    const mech = fixed ? [] : mechanicsFor(r, n);
+    if (n <= 2) def.tutorial = true;
+    const mech = mechanicsFor(r, n);
     if (!applyMechanics(r, def, mech, MECHANIC_INTRO[mech[0]] === n)) {
       rej('mechanics');
       continue;
@@ -485,7 +447,13 @@ export function generateLevel(n: number, seed = n * 7919, maxTries = 6000): Gene
       rej('invalid');
       continue;
     }
-    if (mech.includes('bomb') && !addBomb(r, def, tg.boss ? 3 : 5)) {
+    // cheap screen before tuning: very far from the band is not worth tuning
+    const quick = randomFailRate(def, 60, seed + tries);
+    if (quick < band.fail[0] - 0.35 || quick > band.fail[1] + 0.35) {
+      rej('quick');
+      continue;
+    }
+    if (mech.includes('bomb') && !addBomb(r, def, tg.tier === 'veryhard' || tg.tier === 'hard' ? 3 : 5)) {
       rej('bomb');
       continue;
     }
@@ -493,8 +461,8 @@ export function generateLevel(n: number, seed = n * 7919, maxTries = 6000): Gene
       rej('tune');
       continue;
     }
-    const res = solve(new Puzzle(def), { worst: false, maxStates: 400_000 });
-    if (!res.complete || !res.solvable || res.margin < band.margin[0] || res.margin > band.margin[1]) {
+    const a = analyze(new Puzzle(def), 600_000);
+    if (!a.complete || !a.solvable || a.trapScrews.length < tg.traps || a.decisions < tg.decisions || a.minMoves < tg.moves[0] || a.minMoves > tg.moves[1]) {
       rej('verify');
       continue;
     }
@@ -503,7 +471,7 @@ export function generateLevel(n: number, seed = n * 7919, maxTries = 6000): Gene
       rej(failRate < band.fail[0] ? 'too easy' : 'too hard');
       continue;
     }
-    return { def, margin: res.margin, failRate, tries };
+    return { def, failRate, tries };
   }
   throw new Error(`level ${n}: no candidate met the band ${JSON.stringify(band)} (${JSON.stringify(rejects)})`);
 }

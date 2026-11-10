@@ -6,7 +6,7 @@ import { allPets, KINDS } from '../game/collection';
 import { SHOP, type Slot } from '../game/shop';
 import { ICON } from './icons';
 import { renderPetPortraits } from './portraits';
-import type { Mechanic } from '../puzzle/mechanics';
+import { type Mechanic, tierOf } from '../puzzle/mechanics';
 import type { LoseReason } from '../puzzle/model';
 import { drawBomb, hiddenTexture, iceTexture, lockTexture } from '../puzzle/look';
 import { TryOn } from './tryon';
@@ -41,16 +41,18 @@ export class Hud {
 
   level(n: number, tutorial: boolean): void {
     const daily = dailyStatus(this.g.save, new Date()).available;
+    const tier = tierOf(n);
     this.root.innerHTML = `
       <div class="hud">
         <div class="top">
           <div class="top-left">
             <button class="round" data-act="menu" aria-label="${t('menu')}" data-testid="menu">${ICON.menu}${daily ? '<i class="dot"></i>' : ''}</button>
-            <div class="card pill levelpill"><b data-testid="level">${t('level', { n })}</b></div>
+            <div class="card pill levelpill"><b data-testid="level">${t('level', { n })}</b>${tier === 'hard' || tier === 'veryhard' ? `<span class="tierbadge ${tier}" data-testid="tier">${t(tier === 'hard' ? 'hardLevel' : 'veryHardLevel')}</span>` : ''}</div>
           </div>
           <div class="top-right">${this.coins()}<button class="round" data-act="sound" aria-label="${t('sound')}" data-testid="sound">${this.g.save.settings.sound ? ICON.paw : ICON.pause}</button></div>
         </div>
-        ${n <= 5 ? `<div class="tutorial-text card pill" data-testid="tip">${t(`tip${n}` as 'tip1')}</div>` : ''}
+        <div class="card pill movespill" data-testid="moves" aria-label="${t('moves')}"><span>${t('moves')}</span><b data-moves>0</b><small>/ ${this.g.minMoves}</small></div>
+        ${n <= 4 ? `<div class="tutorial-text card pill" data-testid="tip">${t(`tip${n}` as 'tip1')}</div>` : ''}
         <button class="round hintbtn" data-act="hint" aria-label="${t('hint')}" data-testid="hint" hidden>${ICON.bulb}</button>
         <div class="boosters" data-boosters ${n <= 2 ? 'hidden' : ''}>
           ${BOOSTERS.map((b) => `<button class="booster" data-booster="${b.id}" data-testid="booster-${b.id}" aria-label="${t(b.label)}">${b.icon}<span class="lbl">${t(b.label)}</span><span class="cost"></span></button>`).join('')}
@@ -113,7 +115,7 @@ export class Hud {
   noAd(b: Booster | 'continue'): void {
     this.toast(t('noAd'), 2.5);
     if (b === 'continue') {
-      const el = this.root.querySelector<HTMLButtonElement>('[data-act=continue]');
+      const el = this.root.querySelector<HTMLButtonElement>('[data-act=adcontinue]');
       if (el) {
         el.disabled = true;
         setTimeout(() => (el.disabled = false), 2500);
@@ -248,25 +250,23 @@ export class Hud {
   /** Fail card: Retry (instant), +1 slot or undo the last 3 taps (one continue per level). */
   lost(reason: LoseReason): void {
     const g = this.g;
-    const cost = (b: Booster) => {
-      const stock = g.save.boosters[b];
-      return stock > 0 ? `<small>×${stock}</small>` : g.save.coins >= BOOSTER_PRICE[b] ? `<small>${ICON.coin} ${BOOSTER_PRICE[b]}</small>` : `<small>${ICON.ad} ${t('watchAd')}</small>`;
-    };
     const title = reason === 'bomb' ? t('boomTitle') : reason === 'stuck' ? t('stuckTitle') : t('trayFull');
     const text = reason === 'bomb' ? t('boomText') : reason === 'stuck' ? t('stuckText') : t('failText');
-    const slot = g.canContinue('slot');
-    const undo = g.canContinue('undo');
+    const more = g.canContinue();
     this.overlay(`<div class="card dialog caught" data-testid="lost">
       <h2 data-testid="lost-title">${title}</h2><p>${text}</p>
+      ${more ? `<button class="big" data-act="adcontinue" data-testid="continue">${ICON.ad}<span>${t('adContinue')}</span></button>` : ''}
       <button class="big primary" data-act="retry" data-testid="retry">${ICON.restart}<span>${t('retry')}</span></button>
-      ${slot || undo ? `<div class="row continues">
-        ${slot ? `<button class="big" data-act="slot" data-testid="continue">${ICON.slot}<span>${t('plusSlot')}</span>${cost('slot')}</button>` : ''}
-        ${undo ? `<button class="big" data-act="undo" data-testid="undo3">${ICON.undo}<span>${t('undo3')}</span>${cost('undo')}</button>` : ''}
-      </div><p class="small">${t('oneContinue')}</p>` : ''}
     </div>`, 'red');
     this.on('[data-act=retry]', () => g.retry());
-    this.on('[data-act=slot]', () => void g.continueLevel('slot'));
-    this.on('[data-act=undo]', () => void g.continueLevel('undo'));
+    this.on('[data-act=adcontinue]', () => void g.continueWithAd());
+  }
+
+  /** Moves counter (stars depend on it). */
+  moves(): void {
+    const el = this.root.querySelector('[data-moves]');
+    if (el) el.textContent = String(this.g.moves);
+    this.root.querySelector('[data-testid=moves]')?.classList.toggle('over', this.g.moves > this.g.minMoves);
   }
 
   /** One-screen tip for a new mechanic (on its first level). */
@@ -283,9 +283,9 @@ export class Hud {
       chain: `<svg class="mtip-img" viewBox="0 0 64 64"><g fill="none" stroke="#9aa0ae" stroke-width="7"><rect x="4" y="22" width="22" height="20" rx="10"/><rect x="21" y="22" width="22" height="20" rx="10" stroke="#c9ced8"/><rect x="38" y="22" width="22" height="20" rx="10"/></g></svg>`,
       lock: img(lockTexture(0, 'lock').image as HTMLCanvasElement),
       bomb: img(bomb),
-      sticky: `<svg class="mtip-img" viewBox="0 0 64 64"><circle cx="32" cy="32" r="22" fill="#7a2c2e" stroke="#f0464b" stroke-width="9"/><circle cx="32" cy="32" r="8" fill="#fff"/></svg>`,
+      sticky: `<svg class="mtip-img" viewBox="0 0 64 64"><rect x="4" y="18" width="56" height="20" rx="6" fill="#ffb627" stroke="#3b2346" stroke-width="4"/><path d="M14 38v10a4 4 0 0 0 8 0V38M40 38v6a4 4 0 0 0 8 0v-6" fill="#ffa20f" stroke="#3b2346" stroke-width="3"/></svg>`,
     };
-    const key = { ice: 'Ice', hidden: 'Hidden', chain: 'Chain', lock: 'Lock', bomb: 'Bomb', sticky: 'Sticky' }[m];
+    const key = ({ ice: 'Ice', hidden: 'Hidden', chain: 'Chain', lock: 'Lock', bomb: 'Bomb', sticky: 'Sticky' } as const)[m];
     const d = this.overlay(`<div class="card dialog mtip" data-testid="mechanic-tip">
       <div class="ribbon small">${t('newMechanic')}</div>
       ${icon[m]}
