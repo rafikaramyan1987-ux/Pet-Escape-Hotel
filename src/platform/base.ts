@@ -139,6 +139,8 @@ export abstract class BasePlatform implements Platform {
 
   // ─── saves: localStorage, known keys only ───
   getItem(k: string): string | null {
+    // Playgama: saves only through Bridge Storage (playgama.ts); no localStorage code in that build
+    if (__PLATFORM__ === 'playgama') return null;
     try {
       return localStorage.getItem(k);
     } catch {
@@ -147,6 +149,7 @@ export abstract class BasePlatform implements Platform {
   }
 
   setItem(k: string, v: string): void {
+    if (__PLATFORM__ === 'playgama') return;
     try {
       localStorage.setItem(k, v);
     } catch {

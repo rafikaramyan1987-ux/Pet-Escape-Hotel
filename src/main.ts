@@ -92,6 +92,9 @@ async function boot(): Promise<void> {
       document.getElementById('ui')!.style.display = 'none';
       game.view.coverExtras();
     }
+  }
+  // script hooks: tooling builds, and the Playgama build (scripts/playgama/test.mjs drives it through window.__game)
+  if (tooling || __PLATFORM__ === 'playgama') {
     (window as unknown as { __game: unknown }).__game = {
       game,
       step: (dt: number, n = 1) => {

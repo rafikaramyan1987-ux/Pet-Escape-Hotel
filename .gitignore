@@ -4,6 +4,7 @@ dist-crazygames/
 dist-gd/
 dist-gamepix/
 dist-e2e/
+dist-playgama/
 *.zip
 test-results/
 playwright-report/
@@ -19,6 +20,8 @@ submission/trailers/.frames-*/
 !submission/screw-and-rescue-v2.zip
 !submission-gd/screw-and-rescue-gd-v1.zip
 !submission-gamepix/screw-and-rescue-gamepix-v1.zip
+!submission-web/screw-and-rescue-web-v1.zip
+!submission-playgama/screw-and-rescue-playgama-v1.zip
 docs/art/.frames-*/
 docs/art/.fseg-*
 docs/art/.fsegs.txt
