@@ -11,7 +11,7 @@ const GPX = 'https://integration.gamepix.com/sdk/v3/gamepix.sdk.js';
 const CG = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
 const NAMESPACES = new Set(['http://www.w3.org/1999/xhtml', 'http://www.w3.org/2000/svg', 'http://www.w3.org/1999/xlink']);
 const zips = process.argv.slice(2);
-if (!zips.length) zips.push('submission-gd/screw-and-rescue-gd-v1.zip', 'submission-gamepix/screw-and-rescue-gamepix-v1.zip', 'submission/screw-and-rescue-v2.zip');
+if (!zips.length) zips.push('submission-gd/screw-and-rescue-gd-v1.zip', 'submission-gamepix/screw-and-rescue-gamepix-v1.zip', 'submission-gamepix/screw-and-rescue-gamepix-v2.zip', 'submission/screw-and-rescue-v2.zip');
 
 let failed = 0;
 for (const zip of zips) {
