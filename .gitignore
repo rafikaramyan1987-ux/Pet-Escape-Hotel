@@ -5,6 +5,11 @@ dist-gd/
 dist-gamepix/
 dist-e2e/
 dist-playgama/
+dist-gamemonetize/
+dist-y8/
+ci-gamemonetize/
+ci-y8/
+submission-y8/media/.frames-*/
 *.zip
 test-results/
 playwright-report/
@@ -22,6 +27,8 @@ submission/trailers/.frames-*/
 !submission-gamepix/screw-and-rescue-gamepix-v1.zip
 !submission-web/screw-and-rescue-web-v1.zip
 !submission-playgama/screw-and-rescue-playgama-v1.zip
+!submission-gamemonetize/screw-and-rescue-gamemonetize-v1.zip
+!submission-y8/screw-and-rescue-y8-v1.zip
 docs/art/.frames-*/
 docs/art/.fseg-*
 docs/art/.fsegs.txt

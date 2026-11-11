@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Screw & Rescue - a cute 3D screw puzzle (Three.js) for the web, CrazyGames, GameDistribution, GamePix and Playgama",
+  "description": "Screw & Rescue - a cute 3D screw puzzle (Three.js) for the web, CrazyGames, GameDistribution, GamePix, Playgama, GameMonetize and Y8",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
@@ -13,10 +13,14 @@
     "build:gd": "vite build --mode gd",
     "build:gamepix": "vite build --mode gamepix",
     "build:playgama": "vite build --mode playgama",
+    "build:gamemonetize": "vite build --mode gamemonetize",
+    "build:y8": "vite build --mode y8",
     "preview": "vite preview --port 4173 --strictPort",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
+    "e2e:gamemonetize": "playwright test -c playwright.gamemonetize.config.ts",
+    "e2e:y8": "playwright test -c playwright.y8.config.ts",
     "art": "node scripts/render-art.mjs",
     "check": "npm run lint && npm run typecheck && npm test",
     "test": "vitest run",
@@ -33,7 +37,13 @@
     "store:web": "node scripts/web/store.mjs",
     "check:playgama": "node scripts/playgama/check.mjs",
     "test:playgama": "node scripts/playgama/test.mjs",
-    "qa:playgama": "node scripts/playgama/qa.mjs"
+    "qa:playgama": "node scripts/playgama/qa.mjs",
+    "submission:gamemonetize": "npm run build:gamemonetize && node scripts/gamemonetize/zip.mjs",
+    "check:gamemonetize": "node scripts/gamemonetize/check.mjs",
+    "images:gamemonetize": "node scripts/gamemonetize/images.mjs",
+    "submission:y8": "npm run build:y8 && node scripts/y8/zip.mjs",
+    "check:y8": "node scripts/y8/check.mjs",
+    "media:y8": "node scripts/y8/media.mjs"
   },
   "dependencies": {
     "@fontsource/fredoka": "^5.3.0",

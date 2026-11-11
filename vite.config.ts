@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
- * Build-time platform layer: VITE_PLATFORM = web | crazygames | gd | gamepix | playgama (or `--mode <platform>`).
+ * Build-time platform layer: VITE_PLATFORM = web | crazygames | gd | gamepix | playgama | gamemonetize | y8 (or `--mode <platform>`).
  * `__PLATFORM__` is defined as a literal, so each build only contains its own portal SDK code (src/platform/sdk.ts).
  *  - web (default, GitHub Pages → dist/): icons, no external script, no SDK, no ads.
  *  - crazygames (→ dist-crazygames/): the CrazyGames SDK v3 script tag in <head>.
@@ -12,18 +12,22 @@ import { defineConfig, type Plugin } from 'vite';
  *  - playgama (→ dist-playgama/): Playgama Bridge from Playgama's CDN, the first script in <head>, initialized
  *    before the game bundle runs, plus `playgama-bridge-config.json`; index.html + assets/ with relative paths (not a
  *    single file), no icons.
+ *  - gamemonetize (→ dist-gamemonetize/): GameMonetize; SDK_OPTIONS + sdk.js are set up once at boot (src/platform/gamemonetize.ts).
+ *  - y8 (→ dist-y8/): `<script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async>` in <head>, from Y8's CDN
+ *    only (never bundled); initialized by src/platform/y8.ts.
  * Portal builds are one self-contained index.html: styles, code and fonts inlined, no manifest, no icons, no
  * asset files, so the game makes no request of its own that could fail or be flagged as missing.
  */
-const PLATFORMS = ['web', 'crazygames', 'gd', 'gamepix', 'playgama'] as const;
+const PLATFORMS = ['web', 'crazygames', 'gd', 'gamepix', 'playgama', 'gamemonetize', 'y8'] as const;
 type PlatformName = (typeof PLATFORMS)[number];
 
 export const CRAZYGAMES_SDK_URL = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
 export const GAMEPIX_SDK_URL = 'https://integration.gamepix.com/sdk/v3/gamepix.sdk.js';
+export const Y8_SDK_URL = 'https://cdn.y8.com/minimal-sdk/2-0/y8.min.js';
 
 function platformFor(mode: string): PlatformName {
   const p = process.env.VITE_PLATFORM || (PLATFORMS.includes(mode as PlatformName) ? mode : 'web');
-  if (!PLATFORMS.includes(p as PlatformName)) throw new Error(`unknown VITE_PLATFORM "${p}" (web | crazygames | gd | gamepix | playgama)`);
+  if (!PLATFORMS.includes(p as PlatformName)) throw new Error(`unknown VITE_PLATFORM "${p}" (web | crazygames | gd | gamepix | playgama | gamemonetize | y8)`);
   return p as PlatformName;
 }
 
@@ -33,6 +37,8 @@ const SDK_TAGS: Record<PlatformName, string> = {
   gd: '',
   gamepix: `<script>window.GamePixConfig = { lifecycle: 'manual' };</script>\n    <script src="${GAMEPIX_SDK_URL}"></script>`,
   playgama: '',
+  gamemonetize: '',
+  y8: `<script src="${Y8_SDK_URL}" async></script>`,
 };
 
 function portalBuild(platform: PlatformName): Plugin {

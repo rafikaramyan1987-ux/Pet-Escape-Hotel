@@ -374,6 +374,11 @@ export class Game {
   }
 
   retry(): void {
+    // Y8: Retry on the fail card is a natural break too (a `next` ad break, paced by the Y8 SDK); other builds: instant
+    if (__PLATFORM__ === 'y8') {
+      void this.platform.midgame('between').then(() => this.start(this.index));
+      return;
+    }
     this.start(this.index);
   }
 
