@@ -1,4 +1,4 @@
-// Y8 submission checks: node scripts/y8/check.mjs [zip] [--no-media]   (default zip: submission-y8/screw-and-rescue-y8-v1.zip)
+// Y8 submission checks: node scripts/y8/check.mjs [zip] [--no-media]   (default zip: submission-y8/screw-and-rescue-y8-v2.zip)
 // - index.html alone at the zip root (one self-contained file: relative paths only, no ./assets)
 // - `<script src="https://cdn.y8.com/minimal-sdk/2-0/y8.min.js" async>` in <head>, the only external URL; the SDK is
 //   never bundled (nothing in the bundle dispatches y8sdk.ready or defines window.y8)
@@ -16,7 +16,7 @@ const GAME_ID = '292545';
 const DIR = 'submission-y8';
 const MB = 1024 * 1024;
 const args = process.argv.slice(2);
-const zip = args.find((a) => !a.startsWith('--')) ?? `${DIR}/screw-and-rescue-y8-v1.zip`;
+const zip = args.find((a) => !a.startsWith('--')) ?? `${DIR}/screw-and-rescue-y8-v2.zip`;
 const errors = [];
 
 const files = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' }).split('\n').filter((f) => f && !f.endsWith('/'));

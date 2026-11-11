@@ -5,8 +5,8 @@ export default {
   slug: web.slug,
   title: 'Screw & Rescue',
   dist: 'dist-playgama',
-  /** the submission zip's version: submission-playgama/<slug>-playgama-v<version>.zip (v1 kept for reference) */
-  version: 2,
+  /** the submission zip's version: submission-playgama/<slug>-playgama-v<version>.zip (older ones kept for reference) */
+  version: 3,
   exclude: web.exclude,
   /** the game's query for the tests: a new player, level 1 (as in scripts/web/check.mjs) */
   query: 'q=low',

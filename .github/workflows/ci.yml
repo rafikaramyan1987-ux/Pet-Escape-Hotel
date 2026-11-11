@@ -77,7 +77,7 @@ jobs:
           zip -j -9 -X -q ci-zips/screw-and-rescue-gd-v1.zip dist-gd/index.html
           zip -j -9 -X -q ci-zips/screw-and-rescue-gamepix-v1.zip dist-gamepix/index.html
           node scripts/check-zips.mjs ci-zips/screw-and-rescue-gd-v1.zip ci-zips/screw-and-rescue-gamepix-v1.zip
-      - name: Committed zips (GD, GamePix v1 + v2, CrazyGames v2) pass the zip checks
+      - name: Committed zips (GD v1 + v2, GamePix v1 + v2 + v3, CrazyGames v2 + v3) pass the zip checks
         run: npm run check:zips
       - name: CrazyGames package limits (< 50 MB, < 1500 files)
         run: |
@@ -145,8 +145,8 @@ jobs:
         run: npm run build:web && node scripts/web/zip.mjs ci-web/screw-and-rescue-web.zip
       - name: Web zip checks (index.html at the root, no crazygames / gamedistribution / gamepix / googlesyndication, no http(s) request at runtime, iframe 640x480 / 960x600 / 1280x720 / 390x844, level 1 solved)
         run: node scripts/web/check.mjs ci-web/screw-and-rescue-web.zip --shots ci-web/checks
-      - name: Committed zip (submission-web/screw-and-rescue-web-v1.zip) passes the same file checks
-        run: node scripts/web/check.mjs submission-web/screw-and-rescue-web-v1.zip --static
+      - name: Committed zip (submission-web/screw-and-rescue-web-v2.zip) passes the same file checks
+        run: node scripts/web/check.mjs submission-web/screw-and-rescue-web-v2.zip --static
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -181,12 +181,12 @@ jobs:
           echo "OK: $f initializes Bridge first and sends game_ready"
       - name: Playgama zip checks (index.html at the root, CDN Bridge first in <head>, initialize() before the game, game_ready, no crazygames / gamedistribution / gamepix, Playgama's precheck with no FAIL / WARN)
         run: node scripts/playgama/zip.mjs ci-playgama/screw-and-rescue-playgama.zip && node scripts/playgama/check.mjs ci-playgama/screw-and-rescue-playgama.zip
-      - name: Committed zip (submission-playgama/screw-and-rescue-playgama-v2.zip) passes the same checks
-        run: node scripts/playgama/check.mjs submission-playgama/screw-and-rescue-playgama-v2.zip
+      - name: Committed zip (submission-playgama/screw-and-rescue-playgama-v3.zip) passes the same checks
+        run: node scripts/playgama/check.mjs submission-playgama/screw-and-rescue-playgama-v3.zip
       - name: Playgama QA Tool harness (?platform_id=qa_tool; Bridge's initialize handshake, game_ready; failures logged, game playable)
         run: |
           node scripts/playgama/qa.mjs ci-playgama/screw-and-rescue-playgama.zip
-          node scripts/playgama/qa.mjs submission-playgama/screw-and-rescue-playgama-v2.zip
+          node scripts/playgama/qa.mjs submission-playgama/screw-and-rescue-playgama-v3.zip
       - name: Bridge test (mock platform + stubbed Playgama SDK; interstitial, rewarded completed / cancelled, muted during ads)
         run: node scripts/playgama/test.mjs ci-playgama/screw-and-rescue-playgama.zip
       - name: The other builds never contain Playgama Bridge
@@ -211,7 +211,7 @@ jobs:
         run: npx vitest run tests/gamemonetize.test.ts
       - name: GameMonetize build + fresh zip checks (index.html at the root, SDK_OPTIONS + game id, sdk.js the only external URL, no other SDK; thumbnails 512x384 / 512x512 / 512x340 JPG < 300 KB; README limits)
         run: npm run build:gamemonetize && node scripts/gamemonetize/zip.mjs ci-gamemonetize/screw-and-rescue-gamemonetize.zip
-      - name: Committed zip (submission-gamemonetize/screw-and-rescue-gamemonetize-v1.zip) passes the same checks
+      - name: Committed zip (submission-gamemonetize/screw-and-rescue-gamemonetize-v2.zip) passes the same checks
         run: npm run check:gamemonetize
       - name: Playwright smoke test of dist-gamemonetize (stubbed SDK; loads, no ad before a click, pre-roll, level 1 played, no rewarded buttons, ad blocker, no console errors)
         run: npm run e2e:gamemonetize -- --trace off
@@ -239,7 +239,7 @@ jobs:
         run: npx vitest run tests/y8.test.ts
       - name: Y8 build + fresh zip checks (index.html at the root, CDN SDK async in <head>, never bundled, app / game id, no other SDK; every media file at its exact size, videos 20-30 s < 50 MB)
         run: npm run build:y8 && node scripts/y8/zip.mjs ci-y8/screw-and-rescue-y8.zip
-      - name: Committed zip (submission-y8/screw-and-rescue-y8-v1.zip) passes the same checks
+      - name: Committed zip (submission-y8/screw-and-rescue-y8-v2.zip) passes the same checks
         run: npm run check:y8
       - name: Playwright smoke test of dist-y8 (stubbed SDK; loads, init before any ad, start / next, level 1 played, rewarded, blur / hidden pause, ad blocker, no console errors)
         run: npm run e2e:y8 -- --trace off
@@ -247,3 +247,26 @@ jobs:
         run: |
           for m in web crazygames gd gamepix playgama gamemonetize; do npm run build:$m; done
           for f in dist dist-crazygames dist-gd dist-gamepix dist-playgama dist-gamemonetize; do if grep -rqi -e cdn.y8.com -e y8sdk -e 6af4b159ca1c6869a74e059b $f; then echo "$f has Y8 code"; exit 1; fi; done
+
+  tips:
+    # the tutorial tip (levels 1-4) and the HUD overlays never cover the board: 10 languages x 6 screen sizes, the tip's
+    # box against the projected bounds of every screw, plank, the pet, toolbox, tray and HUD control; screenshots as artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Tip + overlay layout test (360x640, 390x844, 412x915, 768x1024, 844x390, 1280x720; levels 1-4; 10 languages)
+        run: npm run e2e:tips -- --trace off --workers 4
+      - name: Upload the layout screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tip-layout-screenshots
+          path: test-results/tips/
+          if-no-files-found: error

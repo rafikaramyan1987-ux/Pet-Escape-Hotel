@@ -1,5 +1,5 @@
 // GameMonetize submission checks: node scripts/gamemonetize/check.mjs [zip] [--no-images]
-// (default zip: submission-gamemonetize/screw-and-rescue-gamemonetize-v1.zip)
+// (default zip: submission-gamemonetize/screw-and-rescue-gamemonetize-v2.zip)
 // - index.html at the zip root and nothing else (one self-contained file: relative paths only, no ./assets)
 // - window.SDK_OPTIONS with the game id, https://api.gamemonetize.com/sdk.js the only external URL, never a copy of the SDK
 // - no other ad network / portal SDK, no "More games", no window.open
@@ -13,7 +13,7 @@ const GM_SDK = 'https://api.gamemonetize.com/sdk.js';
 const GM_ID = 'qd017r024ijevcoihn7kl2hkyvkw2t7z';
 const DIR = 'submission-gamemonetize';
 const args = process.argv.slice(2);
-const zip = args.find((a) => !a.startsWith('--')) ?? `${DIR}/screw-and-rescue-gamemonetize-v1.zip`;
+const zip = args.find((a) => !a.startsWith('--')) ?? `${DIR}/screw-and-rescue-gamemonetize-v2.zip`;
 const errors = [];
 
 const files = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' }).split('\n').filter((f) => f && !f.endsWith('/'));

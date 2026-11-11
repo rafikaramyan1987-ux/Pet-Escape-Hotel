@@ -251,13 +251,20 @@ svg { width: 100%; height: 100%; display: block; }
 #ui .hud { pointer-events: none; }
 #ui .hud button, #ui .hud .card { pointer-events: auto; }
 
+/* toasts sit in the top-bar zone (over the bar for a moment, pointer-events none), never over the board; centred with
+   transform (a separate `translate` is dropped by the CSS minifier next to `transform`) */
 #toast {
-  position: absolute; left: 50%; top: 30%; translate: -50% 0; z-index: 30; pointer-events: none;
+  position: absolute; left: 50%; top: max(calc(var(--u) * 12), calc(env(safe-area-inset-top) + var(--u) * 2)); z-index: 30; pointer-events: none;
   background: var(--ink); color: var(--cream); border-radius: 999px; padding: calc(var(--u) * 8) calc(var(--u) * 18);
-  font-weight: 700; font-size: calc(var(--u) * 16); opacity: 0; transition: opacity 0.2s, transform 0.2s; transform: translateY(8px);
-  box-shadow: 0 calc(var(--u) * 6) calc(var(--u) * 16) rgba(0, 0, 0, 0.4); white-space: normal; text-align: center; width: max-content; max-width: 92vw; line-height: 1.2;
+  font-weight: 700; font-size: calc(var(--u) * 15); opacity: 0; transition: opacity 0.2s, transform 0.2s; transform: translate(-50%, calc(var(--u) * -8));
+  box-shadow: 0 calc(var(--u) * 6) calc(var(--u) * 16) rgba(0, 0, 0, 0.4); white-space: normal; text-align: center; width: max-content; max-width: min(94vw, calc(var(--u) * 430)); line-height: 1.2;
 }
-#toast.show { opacity: 1; transform: none; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* landscape: the toolboxes take the top centre, so toasts go bottom left (where the tip goes), left of the crate */
+@media (orientation: landscape) {
+  #toast { left: calc(var(--u) * 20); top: auto; bottom: max(calc(var(--u) * 20), env(safe-area-inset-bottom)); max-width: calc(50% - var(--u) * 150); transform: translateY(calc(var(--u) * 8)); }
+  #toast.show { transform: none; }
+}
 
 .tap { position: absolute; width: calc(var(--u) * 34); height: calc(var(--u) * 34); margin: calc(var(--u) * -17) 0 0 calc(var(--u) * -17); border-radius: 50%; border: calc(var(--u) * 4) solid #ffd27a; pointer-events: none; animation: tap 0.5s ease-out forwards; z-index: 5; }
 .tap.no { border-color: #ff6a5a; }
@@ -512,9 +519,21 @@ body { background: #f7c2a8; }
 .dialog .continues .big { font-size: calc(var(--u) * 18); min-height: calc(var(--u) * 64); padding: calc(var(--u) * 6) calc(var(--u) * 8); }
 .dialog .continues .big small svg { width: calc(var(--u) * 14); height: calc(var(--u) * 14); display: inline-block; vertical-align: -2px; }
 .tutorial-text { max-width: calc(100% - var(--u) * 20); text-align: center; white-space: normal; line-height: 1.15; }
-/* the tip sits above the booster bar (levels 3+) and below the board */
-.hud .tutorial-text { bottom: calc(var(--u) * 116); font-size: calc(var(--u) * 16); }
-@media (orientation: landscape) { .hud .tutorial-text { bottom: calc(var(--u) * 20); left: calc(var(--u) * 20); translate: none; max-width: calc(var(--u) * 340); } }
+/* The tip (levels 1-4) has its own strip at the bottom: above the booster bar (levels 3-4) or at the very bottom (levels
+   1-2, no boosters yet). The 3D board is framed above that strip (PuzzleView.setReserve, measured by Hud.tipFrame), so
+   the tip never covers a screw, a plank, the pet, the toolboxes or the tray. At most 2 lines; it fades out after the
+   first valid tap or 5 s, and a tap on it dismisses it. */
+.hud .tutorial-text {
+  bottom: calc(var(--u) * 116); font-size: calc(var(--u) * 15); width: max-content; max-width: calc(100% - var(--u) * 16);
+  padding: calc(var(--u) * 6) calc(var(--u) * 14); animation: none; pointer-events: auto; cursor: pointer;
+  transition: opacity 0.35s ease;
+}
+.hud .tutorial-text.low { bottom: max(calc(var(--u) * 14), env(safe-area-inset-bottom)); }
+#ui .hud .tutorial-text.gone { opacity: 0; pointer-events: none; }
+/* landscape: bottom left, clear of the booster bar and the hint button on the right */
+@media (orientation: landscape) {
+  .hud .tutorial-text, .hud .tutorial-text.low { bottom: max(calc(var(--u) * 20), env(safe-area-inset-bottom)); left: calc(var(--u) * 20); translate: none; max-width: calc(100% - var(--u) * 400); }
+}
 
 /* ── planning difficulty: tier badge, moves ── */
 .levelpill { position: relative; }

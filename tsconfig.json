@@ -17,5 +17,5 @@
     "allowImportingTsExtensions": false,
     "resolveJsonModule": true
   },
-  "include": ["src", "e2e", "tests", "scripts/*.ts", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "playwright.gamemonetize.config.ts", "playwright.y8.config.ts"]
+  "include": ["src", "e2e", "tests", "scripts/*.ts", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "playwright.gamemonetize.config.ts", "playwright.y8.config.ts", "playwright.tips.config.ts"]
 }

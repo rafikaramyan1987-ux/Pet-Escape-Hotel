@@ -65,6 +65,16 @@ interface Falling {
   bounced: number;
 }
 
+/** A screen rectangle (canvas px). */
+export interface Rect {
+  kind: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+const overlaps = (a: Rect, b: Rect) => Math.min(a.x1, b.x1) > Math.max(a.x0, b.x0) && Math.min(a.y1, b.y1) > Math.max(a.y0, b.y0);
+
 const ease = (k: number) => 1 - Math.pow(1 - k, 3);
 const easeInOut = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 const backOut = (k: number) => 1 + 2.4 * Math.pow(k - 1, 3) + 1.4 * Math.pow(k - 1, 2);
@@ -90,6 +100,12 @@ export class PuzzleView {
   private rescued = -1;
   private hearts: THREE.Sprite[] = [];
   private layoutAspect = 0;
+  /**
+   * Shares of the screen height the scene is kept out of: the bottom strip of the tutorial tip, and at the top only as
+   * much as the HUD (top bar, moves pill, tier badge) would otherwise overlap the board (setInsets). 0 = full screen.
+   */
+  private insetTop = 0;
+  private insetBottom = 0;
   /** Box anchor (world) per open-box index, and the tray anchor; set by layout(). */
   private boxAnchor: THREE.Vector3[] = [];
   private trayAnchor = new THREE.Vector3();
@@ -681,10 +697,59 @@ export class PuzzleView {
     return this.camera.position.clone().addScaledVector(dir, t);
   }
 
-  layout(aspect: number): void {
+  /**
+   * Keep the scene clear of the HUD. `bottomPx`: the strip at the bottom reserved for the tutorial tip (0 = none), the
+   * scene is framed above it. `hud`: the screen rects (canvas px) of the controls on top of the screen; where one would
+   * overlap the toolboxes, the queue, the tray or the object, the frame starts just below it, and only by that much
+   * (no overlap: the framing stays exactly as without insets).
+   */
+  setInsets(hud: Rect[], bottomPx: number, w: number, h: number): void {
+    if (!h) return;
+    this.insetBottom = Math.max(0, Math.min(0.4, bottomPx / h));
+    this.insetTop = 0;
+    this.layout(w / h);
+    const gap = 6;
+    for (let i = 0; i < 6; i++) {
+      let need = 0;
+      for (const b of this.frameRects(w, h)) for (const r of hud) if (overlaps(r, b)) need = Math.max(need, r.y1 + gap - b.y0);
+      if (need <= 0.5 || this.insetTop + this.insetBottom > 0.6) break;
+      this.insetTop += need / h;
+      this.layout(w / h);
+    }
+  }
+
+  /** Screen rect (canvas px) of an object's bounding box. */
+  private rectOf(kind: string, o: THREE.Object3D, w: number, h: number): Rect | null {
+    const b = new THREE.Box3().setFromObject(o);
+    if (b.isEmpty()) return null;
+    const v = new THREE.Vector3();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(this.camera);
+      const x = ((v.x + 1) / 2) * w;
+      const y = ((1 - v.y) / 2) * h;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    return { kind, x0, y0, x1, y1 };
+  }
+
+  /** The big parts of the board: toolboxes, queue, tray and the object (with its planks, screws and the pet). */
+  private frameRects(w: number, h: number): Rect[] {
+    this.scene.updateMatrixWorld();
+    const parts: [string, THREE.Object3D][] = [['object', this.object], ['tray', this.trayG]];
+    for (const b of this.boxes) if (!b.leaving) parts.push([`toolbox ${b.index}`, b.g]);
+    if (this.queueG.children.length) parts.push(['queue', this.queueG]);
+    return parts.map(([k, o]) => this.rectOf(k, o, w, h)).filter((r): r is Rect => r !== null);
+  }
+
+  layout(screenAspect: number): void {
     const cam = this.camera;
+    // framed as if the screen were only the part between the insets (setViewOffset below extends the picture over them)
+    const span = 1 - this.insetTop - this.insetBottom;
+    const aspect = screenAspect / span;
+    cam.clearViewOffset();
     cam.aspect = aspect;
-    const portrait = aspect < 1;
+    const portrait = screenAspect < 1;
     cam.fov = portrait ? 38 : 32;
     cam.updateProjectionMatrix();
     const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
@@ -734,7 +799,36 @@ export class PuzzleView {
     this.trayG.rotation.x = 0.35;
     this.queueG.scale.setScalar(this.boxScale * 0.8);
     for (const b of this.boxes) if (!b.leaving) this.placeBox(b, b.g.userData.offset ?? 0);
-    this.layoutAspect = aspect;
+    this.layoutAspect = screenAspect;
+    // the screen shows the framed picture between the insets (room / floor continue above and below it)
+    if (span < 1) cam.setViewOffset(1000 * aspect, 1000, 0, (-1000 * this.insetTop) / span, 1000 * aspect, 1000 / span);
+    cam.updateMatrixWorld();
+  }
+
+  /**
+   * Screen rectangles (CSS px in a w×h canvas) of everything a player must see or tap: each screw still on the board,
+   * each plank still up, the pet, the open toolboxes, the tray and the queue. For layout tests (tooling builds).
+   */
+  screenRects(w: number, h: number): Rect[] {
+    this.scene.updateMatrixWorld();
+    const out: Rect[] = [];
+    const rect = (kind: string, o: THREE.Object3D) => {
+      const r = this.rectOf(kind, o, w, h);
+      if (r) out.push(r);
+    };
+    for (const s of this.screws) {
+      if (this.puzzle.removed[s.id] || s.flying) continue;
+      const c = this.screenOf(s.id, w, h);
+      out.push({ kind: `screw ${s.id}`, x0: c.x - c.r, y0: c.y - c.r, x1: c.x + c.r, y1: c.y + c.r });
+    }
+    this.planks.forEach((p, i) => {
+      if (p.visible && !this.puzzle.plankGone[i]) rect(`plank ${i}`, p);
+    });
+    rect('pet', this.petRoot);
+    for (const b of this.boxes) if (!b.leaving) rect(`toolbox ${b.index}`, b.g);
+    rect('tray', this.trayG);
+    if (this.queueG.children.length) rect('queue', this.queueG);
+    return out;
   }
 
   setOrbit(a: number): void {

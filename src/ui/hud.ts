@@ -8,6 +8,7 @@ import { ICON } from './icons';
 import { renderPetPortraits } from './portraits';
 import { type Mechanic, tierOf } from '../puzzle/mechanics';
 import type { LoseReason } from '../puzzle/model';
+import type { Rect } from '../puzzle/view';
 import { drawBomb, hiddenTexture, iceTexture, lockTexture } from '../puzzle/look';
 import { TryOn } from './tryon';
 
@@ -21,6 +22,9 @@ const BOOSTERS: { id: Booster; icon: string; label: 'boosterSlot' | 'boosterUndo
 
 type Panel = 'pets' | 'shop' | 'daily' | 'settings';
 
+/** The tutorial tip fades out after this many seconds of play (or the first valid tap, or a tap on it). */
+export const TIP_SECONDS = 5;
+
 /** DOM layer: top bar, booster bar, tutorial hand, hints, tap ripples, results and the menu panels. */
 export class Hud {
   private hand: HTMLElement | null = null;
@@ -30,6 +34,11 @@ export class Hud {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private noAdUntil: Partial<Record<Booster, number>> = {};
   private tryon: TryOn | null = null;
+  /** the tutorial tip of levels 1-4: seconds shown */
+  private tipT = 0;
+  /** the HUD insets last given to the view (see insetsFrame) */
+  private insetsKey = '';
+  private insetsView: unknown = null;
 
   constructor(private g: Game, private root: HTMLElement) {
     this.toastEl = document.getElementById('toast') ?? document.createElement('div');
@@ -52,7 +61,7 @@ export class Hud {
           <div class="top-right">${this.coins()}<button class="round" data-act="sound" aria-label="${t('sound')}" data-testid="sound">${this.g.save.settings.sound ? ICON.paw : ICON.pause}</button></div>
         </div>
         <div class="card pill movespill" data-testid="moves" aria-label="${t('moves')}"><span>${t('moves')}</span><b data-moves>0</b><small>/ ${this.g.minMoves}</small></div>
-        ${n <= 4 ? `<div class="tutorial-text card pill" data-testid="tip">${t(`tip${n}` as 'tip1')}</div>` : ''}
+        ${n <= 4 ? `<div class="tutorial-text card pill${n <= 2 ? ' low' : ''}" data-testid="tip" role="status">${t(`tip${n}` as 'tip1')}</div>` : ''}
         <button class="round hintbtn" data-act="hint" aria-label="${t('hint')}" data-testid="hint" hidden>${ICON.bulb}</button>
         <div class="boosters" data-boosters ${n <= 2 ? 'hidden' : ''}>
           ${BOOSTERS.map((b) => `<button class="booster" data-booster="${b.id}" data-testid="booster-${b.id}" aria-label="${t(b.label)}">${b.icon}<span class="lbl">${t(b.label)}</span><span class="cost"></span></button>`).join('')}
@@ -71,6 +80,10 @@ export class Hud {
       this.g.showHint();
     });
     for (const b of BOOSTERS) this.on(`[data-booster=${b.id}]`, () => void this.g.useBooster(b.id));
+    // the tip: tap it to dismiss it (it only ever sits in its own strip, never over the board)
+    this.tipT = 0;
+    this.insetsKey = '';
+    this.on('[data-testid=tip]', () => this.hideTip());
     this.hand = null;
     if (tutorial) {
       this.hand = document.createElement('div');
@@ -139,8 +152,45 @@ export class Hud {
     setTimeout(() => m.remove(), 500);
   }
 
+  /** The tutorial tip fades out (first valid tap, 5 s, or tapped); its strip stays reserved so the board doesn't jump. */
+  hideTip(): void {
+    this.root.querySelector('[data-testid=tip]')?.classList.add('gone');
+  }
+
+  /**
+   * The tip timer, and the insets the board is framed in (every level, measured from the DOM so they follow the screen
+   * size, wrapping and the language): the tip's strip at the bottom, and the top-bar controls, the moves pill and the
+   * tier badge at the top. Re-applied only when they change (or undo / continue built a new view).
+   */
+  private insetsFrame(dt: number): void {
+    const tip = this.root.querySelector<HTMLElement>('[data-testid=tip]');
+    // 5 s of play: not while a menu or the mechanic tip has paused the level
+    if (tip && !tip.classList.contains('gone') && this.g.mode === 'play' && !this.g.paused) {
+      this.tipT += dt;
+      if (this.tipT >= TIP_SECONDS) this.hideTip();
+    }
+    // only in play: a relayout must never cut into the rescue camera glide
+    if (this.g.mode !== 'play') return;
+    const c = this.g.canvas.getBoundingClientRect();
+    if (!c.height) return;
+    const u = Math.min(c.width / 440, c.height / 780);
+    // the tip's strip stays reserved after it faded, so the board doesn't jump
+    const bottom = tip ? Math.max(0, c.bottom - tip.getBoundingClientRect().top + u * 12) : 0;
+    const hud: Rect[] = [];
+    for (const el of this.root.querySelectorAll<HTMLElement>('.hud .top button, .hud .top .card, .hud .movespill, .hud .tierbadge')) {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) hud.push({ kind: el.dataset.testid ?? el.className, x0: r.left - c.left, y0: r.top - c.top, x1: r.right - c.left, y1: r.bottom - c.top });
+    }
+    const key = `${Math.round(c.width)}x${Math.round(c.height)}|${Math.round(bottom)}|${hud.map((r) => [r.x0, r.y0, r.x1, r.y1].map((v) => Math.round(v / 4)).join(',')).join(';')}`;
+    if (key === this.insetsKey && this.insetsView === this.g.view) return;
+    this.insetsKey = key;
+    this.insetsView = this.g.view;
+    this.g.view.setInsets(hud, bottom, c.width, c.height);
+  }
+
   frame(dt: number): void {
     this.animateCoins(dt);
+    this.insetsFrame(dt);
     const g = this.g;
     const hb = this.root.querySelector<HTMLElement>('[data-act=hint]');
     if (hb) hb.hidden = !g.hintAvailable;
