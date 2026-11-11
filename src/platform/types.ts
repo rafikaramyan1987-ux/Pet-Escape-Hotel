@@ -3,7 +3,7 @@
  * locale). One implementation per portal, chosen at build time by `__PLATFORM__` (VITE_PLATFORM, see
  * vite.config.ts), so a build only contains its own portal's code.
  */
-export type PlatformName = 'web' | 'crazygames' | 'gd' | 'gamepix' | 'playgama';
+export type PlatformName = 'web' | 'crazygames' | 'gd' | 'gamepix' | 'playgama' | 'gamemonetize' | 'y8';
 
 export type AdType = 'midgame' | 'rewarded';
 export type AdResult = 'finished' | 'error' | 'timeout' | 'busy' | 'nosdk';
@@ -24,6 +24,8 @@ export const realClock: Clock = {
 
 /** An ad that has not started after this long counts as "no ad available" (ms). */
 export const AD_START_TIMEOUT = 8000;
+/** GameMonetize / Y8: a started ad that never reports its end is given up after this long, so the game cannot stay paused (ms). */
+export const AD_MAX = 120_000;
 /** At most one interstitial every ~2 minutes. */
 export const MIDGAME_GAP = 120_000;
 /** How long the "No ad available right now, try later" message (and the paused button) stays (ms). */

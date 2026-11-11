@@ -10,8 +10,8 @@ import { ICON } from './ui/icons';
 /**
  * Boot. The portal SDK first (`init`, loading events), then the save, the language (saved choice, else the
  * portal's locale, else the browser's) and the game. CrazyGames and the web build land straight in the current
- * level; GameDistribution and GamePix show a title screen first (GD: the first Play click is the pre-roll; GamePix:
- * the title only shows once `lifecycle.loaded()` resolved).
+ * level; GameDistribution, GamePix, GameMonetize and Y8 show a title screen first (GD / GameMonetize: the first Play click
+ * is the pre-roll, Y8: the `start` ad break; GamePix: the title only shows once `lifecycle.loaded()` resolved).
  * Web-build tooling: `?level=3` opens a level, `?auto=1` lets the solver bot play, `?capture=1` gives a script
  * frame-exact control through `window.__game`, `?cover=1` adds the logo for cover art, `?lang=de` picks a language.
  */
@@ -72,7 +72,7 @@ async function boot(): Promise<void> {
     if (!capture && !lv && game.unlocked() >= 2 && dailyStatus(save, new Date()).available) game.hud.menu('daily');
     game.loop();
   };
-  if (__PLATFORM__ === 'gd' || __PLATFORM__ === 'gamepix') {
+  if (__PLATFORM__ === 'gd' || __PLATFORM__ === 'gamepix' || __PLATFORM__ === 'gamemonetize' || __PLATFORM__ === 'y8') {
     game.hud.title(async () => {
       audio.unlock();
       await platform.midgame('preroll');

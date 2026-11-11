@@ -193,3 +193,57 @@ jobs:
         run: |
           for m in web crazygames gd gamepix; do npm run build:$m; done
           for f in dist dist-crazygames dist-gd dist-gamepix; do if grep -rq -e playgama-bridge -e bridge.playgama.com $f; then echo "$f has Playgama Bridge"; exit 1; fi; done
+
+  gamemonetize:
+    # GameMonetize: SDK_OPTIONS + api.gamemonetize.com/sdk.js loaded once at boot; interstitials only at natural breaks
+    # after a click; no rewarded ads (the SDK has none); a zip with index.html at the root
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: GameMonetize adapter unit tests (pause + mute, resume, settles once, pre-roll / 2-minute gap, no rewarded)
+        run: npx vitest run tests/gamemonetize.test.ts
+      - name: GameMonetize build + fresh zip checks (index.html at the root, SDK_OPTIONS + game id, sdk.js the only external URL, no other SDK; thumbnails 512x384 / 512x512 / 512x340 JPG < 300 KB; README limits)
+        run: npm run build:gamemonetize && node scripts/gamemonetize/zip.mjs ci-gamemonetize/screw-and-rescue-gamemonetize.zip
+      - name: Committed zip (submission-gamemonetize/screw-and-rescue-gamemonetize-v1.zip) passes the same checks
+        run: npm run check:gamemonetize
+      - name: Playwright smoke test of dist-gamemonetize (stubbed SDK; loads, no ad before a click, pre-roll, level 1 played, no rewarded buttons, ad blocker, no console errors)
+        run: npm run e2e:gamemonetize -- --trace off
+      - name: The other builds never contain the GameMonetize SDK
+        run: |
+          for m in web crazygames gd gamepix playgama y8; do npm run build:$m; done
+          for f in dist dist-crazygames dist-gd dist-gamepix dist-playgama dist-y8; do if grep -rqi -e gamemonetize -e qd017r024ijevcoihn7kl2hkyvkw2t7z $f; then echo "$f has GameMonetize code"; exit 1; fi; done
+
+  y8:
+    # Y8: y8.min.js from Y8's CDN (async, never bundled), initialized as the portal snippet; start / next interstitials
+    # only from clicks, rewarded only after adViewed; pause + mute on hidden / blur; a zip with index.html at the root
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: ffprobe for the video checks
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - name: Y8 adapter unit tests (portal-snippet init, no ad before init, beforeAd / afterAd, settles once, reward only on adViewed, hidden / blur pause)
+        run: npx vitest run tests/y8.test.ts
+      - name: Y8 build + fresh zip checks (index.html at the root, CDN SDK async in <head>, never bundled, app / game id, no other SDK; every media file at its exact size, videos 20-30 s < 50 MB)
+        run: npm run build:y8 && node scripts/y8/zip.mjs ci-y8/screw-and-rescue-y8.zip
+      - name: Committed zip (submission-y8/screw-and-rescue-y8-v1.zip) passes the same checks
+        run: npm run check:y8
+      - name: Playwright smoke test of dist-y8 (stubbed SDK; loads, init before any ad, start / next, level 1 played, rewarded, blur / hidden pause, ad blocker, no console errors)
+        run: npm run e2e:y8 -- --trace off
+      - name: The other builds never contain the Y8 SDK
+        run: |
+          for m in web crazygames gd gamepix playgama gamemonetize; do npm run build:$m; done
+          for f in dist dist-crazygames dist-gd dist-gamepix dist-playgama dist-gamemonetize; do if grep -rqi -e cdn.y8.com -e y8sdk -e 6af4b159ca1c6869a74e059b $f; then echo "$f has Y8 code"; exit 1; fi; done
