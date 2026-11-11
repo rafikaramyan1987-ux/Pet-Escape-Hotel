@@ -48,7 +48,7 @@ puzzle, screw, pets, rescue, logic, brain, strategy, casual, 3d, cute
   `platform.language` (English fallback; a language the player picks in Settings is kept); progress through Bridge
   Storage only (key `screw-and-rescue.save.v1`); interstitials on every Next between levels (only on a rescued level's
   result card, so never in a level and never before the first level is finished) with no counter or timer of the
-  game's own: Bridge paces them with `minimumDelayBetweenInterstitial: 120` in playgama-bridge-config.json (Playgama's
+  game's own: Bridge paces them with its own platform default delay between interstitials (no override in playgama-bridge-config.json) (Playgama's
   interstitial docs);
   rewarded ads only from the labelled "Watch an ad for +1 tray slot and continue" button on the fail card (hidden where
   Bridge has no rewarded ads), with the reward only after Bridge's `rewarded` state; audio muted and the level paused

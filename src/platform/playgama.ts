@@ -12,7 +12,7 @@
  *   first message: gameplay messages before it (level 1's level_started) are held and sent right after it
  * - gameplay start → `level_started` (once per level); a rescue → `level_completed`, a fail → `level_failed`
  * - interstitials (`advertisement.showInterstitial()`) on every Next between levels, with no counter or timer of the
- *   game's own: Bridge paces them (`minimumDelayBetweenInterstitial: 120` in playgama-bridge-config.json); never
+ *   game's own: Bridge paces them (Bridge's own platform default delay between interstitials (no override in playgama-bridge-config.json)); never
  *   during a level, never before the first level is finished, no pre-roll
  * - rewarded (`advertisement.showRewarded()`) only from the labelled ad buttons; `adsEnabled` is Bridge's
  *   `isRewardedSupported`, so without rewarded ads the ad buttons are hidden (as in the web build). The reward is
@@ -209,7 +209,7 @@ export class PlaygamaPlatform extends BasePlatform {
   /**
    * Interstitial on every Next between levels (only offered on a rescued level's result card: never in a level, never
    * before the first level is finished, no pre-roll). No counter or timer of the game's own: how often one actually
-   * shows is Bridge's call (`minimumDelayBetweenInterstitial` in playgama-bridge-config.json), as Playgama's docs say.
+   * shows is Bridge's call (Bridge's own platform default delay between interstitials (no override in playgama-bridge-config.json)), as Playgama's docs say.
    */
   override async midgame(slot: AdSlot): Promise<void> {
     if (slot !== 'between' || this.playing || !this.b) return;
