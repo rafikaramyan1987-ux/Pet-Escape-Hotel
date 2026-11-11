@@ -32,7 +32,8 @@
     "check:web": "node scripts/web/check.mjs",
     "store:web": "node scripts/web/store.mjs",
     "check:playgama": "node scripts/playgama/check.mjs",
-    "test:playgama": "node scripts/playgama/test.mjs"
+    "test:playgama": "node scripts/playgama/test.mjs",
+    "qa:playgama": "node scripts/playgama/qa.mjs"
   },
   "dependencies": {
     "@fontsource/fredoka": "^5.3.0",

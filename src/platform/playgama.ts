@@ -1,17 +1,19 @@
 /**
- * Playgama Bridge (https://github.com/Playgama/bridge, v2.4.1, vendor/playgama-bridge/). index.html of the Playgama
- * build loads `./playgama-bridge.js` as its first script (vite.config.ts), so `window.bridge` exists when the game
- * boots; outside Playgama, Bridge runs its mock platform (no ads, its own storage).
- * - init (before the first level): `bridge.initialize()` (capped at 10 s: without Bridge the game plays on with no
- *   ads and an in-memory save), then `platform.language` (Bridge's own fallback is the browser language; the game
+ * Playgama Bridge (https://github.com/Playgama/bridge). index.html of the Playgama build loads Bridge from Playgama's
+ * CDN (https://bridge.playgama.com/v2/stable/playgama-bridge.js) as its first script and initializes it before the
+ * game bundle runs (vite.config.ts, scripts/playgama/boot.js); outside Playgama, Bridge runs its mock platform (no
+ * ads, its own storage).
+ * - init (before the first level): `bridge.initialize()`'s outcome (see initBridge; a failure is logged with
+ *   console.error and the game plays on with no ads and an in-memory save), then `platform.language` (Bridge's own fallback is the browser language; the game
  *   falls back to English; a language the player chose in Settings still wins), the save through Bridge Storage (one
  *   `storage.get([...])` of every key, kept in memory; writes go to `storage.set`), `platform.isAudioEnabled`, and
  *   the AUDIO_STATE_CHANGED / PAUSE_STATE_CHANGED events
- * - `game_ready` once the loading screen is gone and the first level is up (500 ms after loadingStop())
+ * - `game_ready` once the loading screen is gone and the first level is up (500 ms after loadingStop()); it is always the
+ *   first message: gameplay messages before it (level 1's level_started) are held and sent right after it
  * - gameplay start → `level_started` (once per level); a rescue → `level_completed`, a fail → `level_failed`
- * - interstitials (`advertisement.showInterstitial()`) only on Next between levels, at most one per ~2 minutes
- *   (MIDGAME_GAP, plus `minimumDelayBetweenInterstitial: 120` in playgama-bridge-config.json); never during a level,
- *   no pre-roll
+ * - interstitials (`advertisement.showInterstitial()`) on every Next between levels, with no counter or timer of the
+ *   game's own: Bridge paces them (Bridge's own platform default delay between interstitials (no override in playgama-bridge-config.json)); never
+ *   during a level, never before the first level is finished, no pre-roll
  * - rewarded (`advertisement.showRewarded()`) only from the labelled ad buttons; `adsEnabled` is Bridge's
  *   `isRewardedSupported`, so without rewarded ads the ad buttons are hidden (as in the web build). The reward is
  *   granted only when Bridge reports the `rewarded` state before `closed`; cancelled / failed: no reward
@@ -25,8 +27,6 @@ import { type AdHandle, type AdResult, type AdSlot, type AdType, type Clock, rea
 
 /** every storage key the game uses (src/game/save.ts SAVE_KEY), read in one `storage.get([...])` at startup */
 export const PLAYGAMA_STORAGE_KEYS = ['screw-and-rescue.save.v1'];
-/** Bridge initialization never blocks the boot longer than this (then the game plays on without the SDK) */
-export const BRIDGE_INIT_TIMEOUT = 10_000;
 /** `game_ready` this long after the loading screen is gone (the first level is mounted by then) */
 export const GAME_READY_DELAY = 500;
 
@@ -59,7 +59,38 @@ declare global {
     bridge?: BridgeSdk;
     /** the Playgama platform, for scripts/playgama/test.mjs */
     __playgama?: PlaygamaPlatform;
+    /** set by the Playgama build's boot script: bridge.initialize()'s outcome (null = initialized, else the error) */
+    __playgamaBridgeInit?: Promise<unknown>;
   }
+}
+
+const NO_SDK = 'the game runs WITHOUT Playgama Bridge (no ads, no Bridge storage, no game_ready)';
+/**
+ * Bridge after `bridge.initialize()`, or null when it failed (logged with console.error, never silent; the game then
+ * plays on without the SDK). In the Playgama build index.html's boot script (scripts/playgama/boot.js) already called
+ * initialize() and started the game only once it settled: its outcome is `window.__playgamaBridgeInit`. No timeout of
+ * the game's own: Bridge settles the promise itself (Playgama: wait for initialization before anything else).
+ */
+export async function initBridge(): Promise<BridgeSdk | null> {
+  if (typeof window === 'undefined') return null;
+  const b = window.bridge;
+  if (!b?.initialize) {
+    console.error(`[Playgama Bridge] window.bridge is missing: ${NO_SDK}`);
+    return null;
+  }
+  const booted = window.__playgamaBridgeInit;
+  const err = booted
+    ? await booted
+    : await b.initialize().then(
+        () => null,
+        (e: unknown) => e ?? new Error('bridge.initialize() rejected'),
+      );
+  if (err) {
+    // the boot script has logged it already
+    if (!booted) console.error(`[Playgama Bridge] bridge.initialize() failed; ${NO_SDK}:`, err);
+    return null;
+  }
+  return b;
 }
 
 interface Pending {
@@ -78,13 +109,15 @@ export class PlaygamaPlatform extends BasePlatform {
   private lang: string | null = null;
   private levelOn = false;
   private readySent = false;
+  /** gameplay messages waiting for game_ready (see send) */
+  private held: string[] = [];
   private pausedBy = new Set<'sdk' | 'hidden'>();
   private pending: Pending | null = null;
   /** what was sent to / received from Bridge (messages, ad states), for scripts/playgama/test.mjs */
   readonly log: string[] = [];
 
   constructor(clock: Clock = realClock) {
-    // interstitials between levels only depend on the 2-minute gap (none in the first 2 minutes), as on GamePix
+    // the base AdPolicy is not used for interstitials here (see midgame): Bridge paces them
     super(clock, 0);
   }
 
@@ -93,20 +126,9 @@ export class PlaygamaPlatform extends BasePlatform {
     return !!this.b;
   }
 
-  override async init(timeoutMs = BRIDGE_INIT_TIMEOUT): Promise<void> {
+  override async init(): Promise<void> {
     if (typeof window !== 'undefined') window.__playgama = this;
-    const b = typeof window !== 'undefined' ? window.bridge : undefined;
-    if (b?.initialize) {
-      let to: unknown = null;
-      try {
-        await Promise.race([b.initialize(), new Promise((_, rej) => (to = this.clock.setTimeout(() => rej(new Error('timeout')), timeoutMs)))]);
-        this.b = b;
-      } catch {
-        this.b = null;
-      } finally {
-        this.clock.clearTimeout(to);
-      }
-    }
+    this.b = await initBridge();
     const s = this.b;
     if (s) {
       try {
@@ -184,7 +206,11 @@ export class PlaygamaPlatform extends BasePlatform {
     return super.requestAd(type);
   }
 
-  /** Interstitial only on Next between levels (never in a level, no pre-roll), at most once per ~2 minutes. */
+  /**
+   * Interstitial on every Next between levels (only offered on a rescued level's result card: never in a level, never
+   * before the first level is finished, no pre-roll). No counter or timer of the game's own: how often one actually
+   * shows is Bridge's call (Bridge's own platform default delay between interstitials (no override in playgama-bridge-config.json)), as Playgama's docs say.
+   */
   override async midgame(slot: AdSlot): Promise<void> {
     if (slot !== 'between' || this.playing || !this.b) return;
     try {
@@ -192,9 +218,6 @@ export class PlaygamaPlatform extends BasePlatform {
     } catch {
       return;
     }
-    if (!this.policy.canShowMidgame()) return;
-    // the gap counts from the request, shown or not (Bridge's own minimumDelayBetweenInterstitial does the same)
-    this.policy.noteAd();
     await this.requestAd('midgame');
   }
 
@@ -208,6 +231,9 @@ export class PlaygamaPlatform extends BasePlatform {
       if (this.readySent || !this.b) return;
       this.readySent = true;
       this.send('game_ready');
+      // gameplay messages sent while the loading screen was still up (level 1 mounts behind it) follow game_ready,
+      // in their order
+      for (const m of this.held.splice(0)) this.send(m);
     }, GAME_READY_DELAY);
   }
 
@@ -229,7 +255,15 @@ export class PlaygamaPlatform extends BasePlatform {
     this.send(won ? 'level_completed' : 'level_failed');
   }
 
+  /**
+   * Every Bridge message goes through here. Playgama: `game_ready` comes first, so any gameplay message (level_started,
+   * level_completed, …) before it is held and sent right after it.
+   */
   private send(m: string): void {
+    if (m !== 'game_ready' && !this.readySent) {
+      this.held.push(m);
+      return;
+    }
     this.log.push(m);
     this.call(() => void Promise.resolve(this.b?.platform.sendMessage(m)).catch(() => undefined));
   }

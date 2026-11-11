@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_KEY } from '../src/game/save';
 import { PlaygamaPlatform, PLAYGAMA_STORAGE_KEYS, type BridgeSdk } from '../src/platform/playgama';
-import { AD_START_TIMEOUT, MIDGAME_GAP } from '../src/platform/types';
+import { AD_START_TIMEOUT } from '../src/platform/types';
 
 /** a Playgama Bridge stand-in: `ad` decides what an ad does (it emits Bridge's ad states) */
 type Emit = (event: string, value: unknown) => void;
@@ -134,23 +134,24 @@ describe('Playgama platform (Bridge)', () => {
     expect(bridge.advertisement.showRewarded).not.toHaveBeenCalled();
   });
 
-  it('interstitials: between levels only, never in a level or as a pre-roll, at most one per MIDGAME_GAP', async () => {
+  it('interstitials: at every break between levels with no game-side counter or timer (Bridge paces them); never in a level or as a pre-roll', async () => {
     const { pg, bridge } = await setup(watched(false));
-    await pg.midgame('between'); // right after loading: too early
-    expect(bridge.advertisement.showInterstitial).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(MIDGAME_GAP);
     await pg.midgame('preroll');
     expect(bridge.advertisement.showInterstitial).not.toHaveBeenCalled();
     pg.gameplayStart();
     await pg.midgame('between'); // in a level
     expect(bridge.advertisement.showInterstitial).not.toHaveBeenCalled();
     pg.gameplayStop();
-    const p = pg.midgame('between');
+    // the first break, right after loading: asked at once (no minimum levels, no 2-minute wait)
+    let p = pg.midgame('between');
     await vi.advanceTimersByTimeAsync(1500);
     await p;
-    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledOnce();
-    await pg.midgame('between'); // within the gap
-    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledOnce();
+    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledTimes(1);
+    // the next break, seconds later: asked again; Bridge's minimumDelayBetweenInterstitial decides whether one shows
+    p = pg.midgame('between');
+    await vi.advanceTimersByTimeAsync(1500);
+    await p;
+    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledTimes(2);
   });
 
   it("platform audio off mutes without pausing; Bridge's pause and a hidden page pause + mute; restore only when nothing is left", async () => {
@@ -170,11 +171,14 @@ describe('Playgama platform (Bridge)', () => {
     expect(log).toEqual(['mute', 'unmute', 'mute', 'pause', 'unmute', 'resume', 'mute']);
   });
 
-  it('without Bridge (script blocked) the game plays on: no ads, an in-memory save', async () => {
+  it('without Bridge (script blocked) the game plays on: no ads, an in-memory save, and says so in the console', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.stubGlobal('window', {});
     vi.stubGlobal('document', { hidden: false, addEventListener: () => {} });
     const pg = new PlaygamaPlatform();
     await pg.init();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('[Playgama Bridge] window.bridge is missing'));
+    error.mockRestore();
     expect(pg.available).toBe(false);
     expect(pg.adsEnabled).toBe(false);
     expect(await pg.requestAd('rewarded')).toBe('nosdk');
@@ -183,14 +187,59 @@ describe('Playgama platform (Bridge)', () => {
     expect(pg.getItem(SAVE_KEY)).toBe('x');
   });
 
-  it('a Bridge that never initializes is given up after 10 s', async () => {
-    const never = { initialize: () => new Promise(() => {}) };
-    vi.stubGlobal('window', { bridge: never });
+  it('bridge.initialize() rejecting is logged with console.error (not silent) and the game plays on without the SDK', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bridge = { initialize: vi.fn(async () => Promise.reject(new Error('boom'))), storage: { get: vi.fn() }, platform: { sendMessage: vi.fn() } };
+    vi.stubGlobal('window', { bridge });
     vi.stubGlobal('document', { hidden: false, addEventListener: () => {} });
     const pg = new PlaygamaPlatform();
-    const p = pg.init();
-    await vi.advanceTimersByTimeAsync(10_000);
-    await p;
+    await pg.init();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('[Playgama Bridge] bridge.initialize() failed'), expect.objectContaining({ message: 'boom' }));
+    error.mockRestore();
+    expect(bridge.storage.get).not.toHaveBeenCalled();
     expect(pg.available).toBe(false);
+    expect(await pg.requestAd('rewarded')).toBe('nosdk');
+    expect(bridge.platform.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("uses the outcome of index.html's boot bridge.initialize() (window.__playgamaBridgeInit) and does not initialize twice", async () => {
+    const { bridge } = await setup(() => {});
+    const again = { ...bridge, initialize: vi.fn(async () => {}) };
+    vi.stubGlobal('window', { bridge: again, __playgamaBridgeInit: Promise.resolve(null) });
+    const pg = new PlaygamaPlatform();
+    await pg.init();
+    expect(again.initialize).not.toHaveBeenCalled();
+    expect(pg.available).toBe(true);
+    expect(bridge.storage.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("a failed boot bridge.initialize() (already logged by boot.js) leaves the game without the SDK", async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { bridge } = await setup(() => {});
+    const again = { ...bridge, initialize: vi.fn(async () => {}) };
+    vi.stubGlobal('window', { bridge: again, __playgamaBridgeInit: Promise.resolve(new Error('boot failed')) });
+    const pg = new PlaygamaPlatform();
+    await pg.init();
+    expect(again.initialize).not.toHaveBeenCalled();
+    expect(pg.available).toBe(false);
+    error.mockRestore();
+  });
+
+  it('records every Bridge call: game_ready is sent before any level_started / gameplay event, even when level 1 starts behind the loading screen', async () => {
+    const { pg, sent } = await setup(watched(false));
+    pg.gameplayStart(); // level 1 mounts behind the loading screen
+    pg.gameplayStop();
+    pg.happytime();
+    pg.gameplayStart();
+    expect(sent).toEqual([]);
+    pg.loadingStop();
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(sent).toEqual(['game_ready', 'level_started', 'level_completed', 'level_started']);
+    pg.sadMoment();
+    expect(sent.at(-1)).toBe('level_failed');
+    const firstGameplay = sent.findIndex((m) => m !== 'game_ready');
+    expect(sent.indexOf('game_ready')).toBe(0);
+    expect(firstGameplay).toBeGreaterThan(0);
   });
 });
