@@ -42,9 +42,14 @@ puzzle, screw, pets, rescue, logic, brain, strategy, casual, 3d, cute
   Bridge script does not load, `console.error("[Playgama Bridge] bridge.initialize() failed; the game runs WITHOUT
   Playgama Bridge …")` and the game plays on with no ads and an in-memory save.
 - **Config:** `playgama-bridge-config.json` beside `index.html` (Bridge loads `./playgama-bridge-config.json`);
-  the first level after initialization; `game_ready` once the loading screen is gone; language from
+  the first level after initialization; `game_ready` once the loading screen is gone, always as the first message
+  (level 1's `level_started`, sent while it mounts behind the loading screen, is held and follows right after it);
+  language from
   `platform.language` (English fallback; a language the player picks in Settings is kept); progress through Bridge
-  Storage only (key `screw-and-rescue.save.v1`); interstitials only on Next between levels (at most one per 2 minutes);
+  Storage only (key `screw-and-rescue.save.v1`); interstitials on every Next between levels (only on a rescued level's
+  result card, so never in a level and never before the first level is finished) with no counter or timer of the
+  game's own: Bridge paces them with `minimumDelayBetweenInterstitial: 120` in playgama-bridge-config.json (Playgama's
+  interstitial docs);
   rewarded ads only from the labelled "Watch an ad for +1 tray slot and continue" button on the fail card (hidden where
   Bridge has no rewarded ads), with the reward only after Bridge's `rewarded` state; audio muted and the level paused
   during ads, on Bridge's pause state and when the page is hidden; Bridge's audio state mutes.

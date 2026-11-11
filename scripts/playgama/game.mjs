@@ -47,6 +47,4 @@ export default {
   async nextLevelOpened(frame) {
     await frame.waitForFunction(() => window.__game?.state().level === 2 && window.__game.state().mode === 'play', null, { timeout: 60_000 });
   },
-  /** skip the 2-minute gap before the next interstitial (src/platform/types.ts AdPolicy) */
-  skipGap: (frame) => frame.evaluate(() => (window.__playgama.policy.lastAd = 0)),
 };

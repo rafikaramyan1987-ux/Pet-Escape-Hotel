@@ -8,11 +8,12 @@
  *   falls back to English; a language the player chose in Settings still wins), the save through Bridge Storage (one
  *   `storage.get([...])` of every key, kept in memory; writes go to `storage.set`), `platform.isAudioEnabled`, and
  *   the AUDIO_STATE_CHANGED / PAUSE_STATE_CHANGED events
- * - `game_ready` once the loading screen is gone and the first level is up (500 ms after loadingStop())
+ * - `game_ready` once the loading screen is gone and the first level is up (500 ms after loadingStop()); it is always the
+ *   first message: gameplay messages before it (level 1's level_started) are held and sent right after it
  * - gameplay start → `level_started` (once per level); a rescue → `level_completed`, a fail → `level_failed`
- * - interstitials (`advertisement.showInterstitial()`) only on Next between levels, at most one per ~2 minutes
- *   (MIDGAME_GAP, plus `minimumDelayBetweenInterstitial: 120` in playgama-bridge-config.json); never during a level,
- *   no pre-roll
+ * - interstitials (`advertisement.showInterstitial()`) on every Next between levels, with no counter or timer of the
+ *   game's own: Bridge paces them (`minimumDelayBetweenInterstitial: 120` in playgama-bridge-config.json); never
+ *   during a level, never before the first level is finished, no pre-roll
  * - rewarded (`advertisement.showRewarded()`) only from the labelled ad buttons; `adsEnabled` is Bridge's
  *   `isRewardedSupported`, so without rewarded ads the ad buttons are hidden (as in the web build). The reward is
  *   granted only when Bridge reports the `rewarded` state before `closed`; cancelled / failed: no reward
@@ -108,13 +109,15 @@ export class PlaygamaPlatform extends BasePlatform {
   private lang: string | null = null;
   private levelOn = false;
   private readySent = false;
+  /** gameplay messages waiting for game_ready (see send) */
+  private held: string[] = [];
   private pausedBy = new Set<'sdk' | 'hidden'>();
   private pending: Pending | null = null;
   /** what was sent to / received from Bridge (messages, ad states), for scripts/playgama/test.mjs */
   readonly log: string[] = [];
 
   constructor(clock: Clock = realClock) {
-    // interstitials between levels only depend on the 2-minute gap (none in the first 2 minutes), as on GamePix
+    // the base AdPolicy is not used for interstitials here (see midgame): Bridge paces them
     super(clock, 0);
   }
 
@@ -203,7 +206,11 @@ export class PlaygamaPlatform extends BasePlatform {
     return super.requestAd(type);
   }
 
-  /** Interstitial only on Next between levels (never in a level, no pre-roll), at most once per ~2 minutes. */
+  /**
+   * Interstitial on every Next between levels (only offered on a rescued level's result card: never in a level, never
+   * before the first level is finished, no pre-roll). No counter or timer of the game's own: how often one actually
+   * shows is Bridge's call (`minimumDelayBetweenInterstitial` in playgama-bridge-config.json), as Playgama's docs say.
+   */
   override async midgame(slot: AdSlot): Promise<void> {
     if (slot !== 'between' || this.playing || !this.b) return;
     try {
@@ -211,9 +218,6 @@ export class PlaygamaPlatform extends BasePlatform {
     } catch {
       return;
     }
-    if (!this.policy.canShowMidgame()) return;
-    // the gap counts from the request, shown or not (Bridge's own minimumDelayBetweenInterstitial does the same)
-    this.policy.noteAd();
     await this.requestAd('midgame');
   }
 
@@ -227,6 +231,9 @@ export class PlaygamaPlatform extends BasePlatform {
       if (this.readySent || !this.b) return;
       this.readySent = true;
       this.send('game_ready');
+      // gameplay messages sent while the loading screen was still up (level 1 mounts behind it) follow game_ready,
+      // in their order
+      for (const m of this.held.splice(0)) this.send(m);
     }, GAME_READY_DELAY);
   }
 
@@ -248,7 +255,15 @@ export class PlaygamaPlatform extends BasePlatform {
     this.send(won ? 'level_completed' : 'level_failed');
   }
 
+  /**
+   * Every Bridge message goes through here. Playgama: `game_ready` comes first, so any gameplay message (level_started,
+   * level_completed, …) before it is held and sent right after it.
+   */
   private send(m: string): void {
+    if (m !== 'game_ready' && !this.readySent) {
+      this.held.push(m);
+      return;
+    }
     this.log.push(m);
     this.call(() => void Promise.resolve(this.b?.platform.sendMessage(m)).catch(() => undefined));
   }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_KEY } from '../src/game/save';
 import { PlaygamaPlatform, PLAYGAMA_STORAGE_KEYS, type BridgeSdk } from '../src/platform/playgama';
-import { AD_START_TIMEOUT, MIDGAME_GAP } from '../src/platform/types';
+import { AD_START_TIMEOUT } from '../src/platform/types';
 
 /** a Playgama Bridge stand-in: `ad` decides what an ad does (it emits Bridge's ad states) */
 type Emit = (event: string, value: unknown) => void;
@@ -134,23 +134,24 @@ describe('Playgama platform (Bridge)', () => {
     expect(bridge.advertisement.showRewarded).not.toHaveBeenCalled();
   });
 
-  it('interstitials: between levels only, never in a level or as a pre-roll, at most one per MIDGAME_GAP', async () => {
+  it('interstitials: at every break between levels with no game-side counter or timer (Bridge paces them); never in a level or as a pre-roll', async () => {
     const { pg, bridge } = await setup(watched(false));
-    await pg.midgame('between'); // right after loading: too early
-    expect(bridge.advertisement.showInterstitial).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(MIDGAME_GAP);
     await pg.midgame('preroll');
     expect(bridge.advertisement.showInterstitial).not.toHaveBeenCalled();
     pg.gameplayStart();
     await pg.midgame('between'); // in a level
     expect(bridge.advertisement.showInterstitial).not.toHaveBeenCalled();
     pg.gameplayStop();
-    const p = pg.midgame('between');
+    // the first break, right after loading: asked at once (no minimum levels, no 2-minute wait)
+    let p = pg.midgame('between');
     await vi.advanceTimersByTimeAsync(1500);
     await p;
-    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledOnce();
-    await pg.midgame('between'); // within the gap
-    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledOnce();
+    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledTimes(1);
+    // the next break, seconds later: asked again; Bridge's minimumDelayBetweenInterstitial decides whether one shows
+    p = pg.midgame('between');
+    await vi.advanceTimersByTimeAsync(1500);
+    await p;
+    expect(bridge.advertisement.showInterstitial).toHaveBeenCalledTimes(2);
   });
 
   it("platform audio off mutes without pausing; Bridge's pause and a hidden page pause + mute; restore only when nothing is left", async () => {
@@ -222,5 +223,23 @@ describe('Playgama platform (Bridge)', () => {
     expect(again.initialize).not.toHaveBeenCalled();
     expect(pg.available).toBe(false);
     error.mockRestore();
+  });
+
+  it('records every Bridge call: game_ready is sent before any level_started / gameplay event, even when level 1 starts behind the loading screen', async () => {
+    const { pg, sent } = await setup(watched(false));
+    pg.gameplayStart(); // level 1 mounts behind the loading screen
+    pg.gameplayStop();
+    pg.happytime();
+    pg.gameplayStart();
+    expect(sent).toEqual([]);
+    pg.loadingStop();
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(sent).toEqual(['game_ready', 'level_started', 'level_completed', 'level_started']);
+    pg.sadMoment();
+    expect(sent.at(-1)).toBe('level_failed');
+    const firstGameplay = sent.findIndex((m) => m !== 'game_ready');
+    expect(sent.indexOf('game_ready')).toBe(0);
+    expect(firstGameplay).toBeGreaterThan(0);
   });
 });

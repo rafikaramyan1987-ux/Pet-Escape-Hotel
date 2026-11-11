@@ -144,7 +144,8 @@ if (only !== 'playgama') {
       return { v: typeof v === 'string' ? v.slice(0, 40) : v };
     });
     expect(saved.v, 'progress saved through Bridge Storage (bridge.storage.get returns the save)', JSON.stringify(saved));
-    await game.skipGap(frame);
+    const order = log1.filter((x) => /^(game_ready|level_|gameplay_|in_game_loading_|player_got_)/.test(x));
+    expect(order[0] === 'game_ready', 'game_ready is the first Bridge message: no level_started / gameplay message before it', order.join(' → '));
     await game.next(frame);
     await game.nextLevelOpened(frame);
     const log2 = await frame.evaluate(() => window.__playgama.log.slice());
@@ -176,15 +177,18 @@ if (only !== 'mock') {
     const res = await game.play(frame, s.page, { w: 960, h: 600 });
     expect(res?.won !== false, `first level played to its result screen (${res?.note ?? res?.why ?? ''})`);
 
-    // between levels: the interstitial (the 2-minute gap is skipped for the test)
-    await game.skipGap(frame);
+    // Bridge's calls, as the platform SDK saw them: game_ready first, no level_started / gameplay message before it
+    const calls = await frame.evaluate(() => window.__stubLog.filter((x) => x === 'gameReady' || x.startsWith('sendMessage:')));
+    expect(calls.indexOf('gameReady') === 0, 'game_ready reached the platform before any level_started / gameplay message', calls.join(' → '));
+
+    // right after the FIRST rescued level: an interstitial (no counter or timer of the game's own; Bridge decides)
     await game.next(frame);
     await frame.waitForFunction(() => window.__playgama.log.includes('interstitial:closed'), null, { timeout: 20_000 });
     const during2 = await frame.evaluate(() => window.__adSamples.interstitial);
     expect(during2?.muted && during2.ctx.every((c) => c === 'suspended'), 'muted + audio suspended while the interstitial is open', JSON.stringify(during2));
     await game.nextLevelOpened(frame);
     const log3 = await frame.evaluate(() => window.__playgama.log.slice());
-    expect(log3.includes('interstitial:closed'), 'interstitial between levels shown and closed, next level opened', log3.join(','));
+    expect(log3.includes('interstitial:closed'), 'interstitial at the first break between levels (no game-side throttle), shown and closed, next level opened', log3.join(','));
     const stub = await frame.evaluate(() => window.__stubLog.slice());
     expect(stub.filter((x) => x === 'showInterstitial').length === 1, 'exactly one interstitial request', stub.join(','));
 
