@@ -1,12 +1,12 @@
 // Open-portal web build (itch.io, Newgrounds, Y8, Playgama): zips the ad-free web build so that index.html is at
 // the zip root (no wrapping folder). Run the web build first (see scripts/web/game.mjs `build`).
-// Usage: node scripts/web/zip.mjs [out.zip]   (default submission-web/<slug>-web-v1.zip)
+// Usage: node scripts/web/zip.mjs [out.zip]   (default submission-web/<slug>-web-v2.zip)
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import game from './game.mjs';
 
-const out = resolve(process.argv[2] ?? `submission-web/${game.slug}-web-v1.zip`);
+const out = resolve(process.argv[2] ?? `submission-web/${game.slug}-web-v2.zip`);
 const dist = resolve(game.dist);
 if (!existsSync(`${dist}/index.html`)) throw new Error(`${game.dist}/index.html missing: run \`${game.build}\` first`);
 mkdirSync(dirname(out), { recursive: true });

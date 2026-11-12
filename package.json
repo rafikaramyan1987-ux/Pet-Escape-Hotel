@@ -1,7 +1,7 @@
 {
   "name": "pet-escape-hotel",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Screw & Rescue - a cute 3D screw puzzle (Three.js) for the web, CrazyGames, GameDistribution, GamePix, Playgama, GameMonetize and Y8",
   "license": "MIT",
@@ -21,6 +21,7 @@
     "e2e": "playwright test",
     "e2e:gamemonetize": "playwright test -c playwright.gamemonetize.config.ts",
     "e2e:y8": "playwright test -c playwright.y8.config.ts",
+    "e2e:tips": "playwright test -c playwright.tips.config.ts",
     "art": "node scripts/render-art.mjs",
     "check": "npm run lint && npm run typecheck && npm test",
     "test": "vitest run",

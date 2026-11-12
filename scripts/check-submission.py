@@ -53,7 +53,10 @@ readme = open('submission/README.md', encoding='utf-8').read()
 for section in ['## Short description', '## Description', '## Controls', '## Tags']:
     if section not in readme:
         errors.append(f'README.md: missing "{section}"')
-for z in ['submission/screw-and-rescue-v1.zip', 'submission/screw-and-rescue-v2.zip', 'submission-gd/screw-and-rescue-gd-v1.zip', 'submission-gamepix/screw-and-rescue-gamepix-v1.zip']:
+for z in ['submission/screw-and-rescue-v1.zip', 'submission/screw-and-rescue-v2.zip', 'submission-gd/screw-and-rescue-gd-v1.zip', 'submission-gamepix/screw-and-rescue-gamepix-v1.zip',
+          'submission/screw-and-rescue-v3.zip', 'submission-gd/screw-and-rescue-gd-v2.zip', 'submission-gamepix/screw-and-rescue-gamepix-v3.zip',
+          'submission-playgama/screw-and-rescue-playgama-v3.zip', 'submission-web/screw-and-rescue-web-v2.zip',
+          'submission-gamemonetize/screw-and-rescue-gamemonetize-v2.zip', 'submission-y8/screw-and-rescue-y8-v2.zip']:
     if not os.path.isfile(z):
         errors.append(f'{z} missing')
 for name, size in [('thumb-512x384.jpg', (512, 384)), ('thumb-512x512.jpg', (512, 512)), ('thumb-200x120.jpg', (200, 120)), ('thumb-1280x720.jpg', (1280, 720)), ('thumb-1280x550.jpg', (1280, 550))]:

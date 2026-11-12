@@ -1,10 +1,10 @@
 // Submission packages, built from the current code:
-//   node scripts/submission.mjs zip       → submission/screw-and-rescue-v2.zip (CrazyGames: folder screw-and-rescue-v2/ with index.html;
-//                                           v1.zip stays as it was submitted)
+//   node scripts/submission.mjs zip       → submission/screw-and-rescue-v3.zip (CrazyGames: folder screw-and-rescue-v3/ with index.html;
+//                                           older zips stay as they were submitted)
 //   node scripts/submission.mjs covers    → submission/cover-1920x1080|800x1200|800x800.png (after npm run build)
-//   node scripts/submission.mjs gd        → submission-gd/screw-and-rescue-gd-v1.zip (index.html at the zip root) and the JPG
+//   node scripts/submission.mjs gd        → submission-gd/screw-and-rescue-gd-v2.zip (index.html at the zip root) and the JPG
 //                                           thumbnails 512x384, 512x512, 200x120, 1280x720, 1280x550 (from the covers)
-//   node scripts/submission.mjs gamepix   → submission-gamepix/screw-and-rescue-gamepix-v1.zip (index.html at the zip root),
+//   node scripts/submission.mjs gamepix   → submission-gamepix/screw-and-rescue-gamepix-v3.zip (index.html at the zip root),
 //                                           icon-256x256.jpg and cover-1360x850.jpg (from the covers)
 //   trailers: node scripts/trailer.mjs landscape|portrait (needs `npm run build` first, like covers)
 import { execFileSync } from 'node:child_process';
@@ -31,12 +31,12 @@ if (what === 'zip') {
   mkdirSync('submission', { recursive: true });
   build('crazygames');
   rmSync('build-zip', { recursive: true, force: true });
-  mkdirSync('build-zip/screw-and-rescue-v2', { recursive: true });
-  cpSync('dist-crazygames/index.html', 'build-zip/screw-and-rescue-v2/index.html');
-  rmSync('submission/screw-and-rescue-v2.zip', { force: true });
-  execFileSync('zip', ['-r', '-X', '-q', '../submission/screw-and-rescue-v2.zip', 'screw-and-rescue-v2'], { cwd: 'build-zip', stdio: 'inherit' });
+  mkdirSync('build-zip/screw-and-rescue-v3', { recursive: true });
+  cpSync('dist-crazygames/index.html', 'build-zip/screw-and-rescue-v3/index.html');
+  rmSync('submission/screw-and-rescue-v3.zip', { force: true });
+  execFileSync('zip', ['-r', '-X', '-q', '../submission/screw-and-rescue-v3.zip', 'screw-and-rescue-v3'], { cwd: 'build-zip', stdio: 'inherit' });
   rmSync('build-zip', { recursive: true, force: true });
-  execFileSync('node', ['scripts/check-zips.mjs', 'submission/screw-and-rescue-v2.zip'], { stdio: 'inherit' });
+  execFileSync('node', ['scripts/check-zips.mjs', 'submission/screw-and-rescue-v3.zip'], { stdio: 'inherit' });
 }
 if (what === 'covers') {
   // landscape: the approved title cover; portrait and square are rendered from the same scene (level 4 cage + logo, like the approved one)
@@ -49,7 +49,7 @@ if (what === 'gd') {
   const out = 'submission-gd';
   mkdirSync(out, { recursive: true });
   build('gd');
-  rootZip('dist-gd', `${out}/screw-and-rescue-gd-v1.zip`);
+  rootZip('dist-gd', `${out}/screw-and-rescue-gd-v2.zip`);
   // the title "Screw & Rescue" is part of the cover art, top right: crops keep the right edge and the top in frame
   thumb(LANDSCAPE, 512, 384, `${out}/thumb-512x384.jpg`, [1, 0]);
   thumb(SQUARE, 512, 512, `${out}/thumb-512x512.jpg`);
@@ -61,7 +61,7 @@ if (what === 'gamepix') {
   const out = 'submission-gamepix';
   mkdirSync(out, { recursive: true });
   build('gamepix');
-  rootZip('dist-gamepix', `${out}/screw-and-rescue-gamepix-v1.zip`);
+  rootZip('dist-gamepix', `${out}/screw-and-rescue-gamepix-v3.zip`);
   thumb(SQUARE, 256, 256, `${out}/icon-256x256.jpg`);
   thumb(LANDSCAPE, 1360, 850, `${out}/cover-1360x850.jpg`, [1, 0]);
 }

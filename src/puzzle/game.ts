@@ -206,6 +206,8 @@ export class Game {
   tap(id: number): void {
     const ev = this.puzzle.tap(id);
     if (!ev.length) return;
+    // the first valid tap: the tutorial tip gets out of the way
+    this.hud.hideTip();
     this.taps++;
     this.moves++;
     if (this.hintTarget >= 0) this.showHint(-1);
